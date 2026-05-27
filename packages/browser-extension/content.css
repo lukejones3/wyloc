@@ -1,0 +1,9 @@
+/*
+ * Content-script CSS.
+ *
+ * Intentionally near-empty: the warning banner renders inside a Shadow
+ * DOM (see ui/banner.ts) with fully scoped styles, so there is nothing
+ * to leak into or inherit from the host LLM page. This file exists only
+ * to satisfy the manifest's content_scripts.css entry and as a place
+ * for any future non-shadow tweaks.
+ */

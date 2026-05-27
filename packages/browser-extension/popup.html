@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI-DLP</title>
+    <style>
+      :root {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        width: 280px;
+        margin: 0;
+        padding: 14px 16px;
+        color: #222;
+        background: #fff;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 2px;
+      }
+      .sub {
+        font-size: 11px;
+        color: #888;
+        margin: 0 0 12px;
+      }
+      .stats {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .stat {
+        flex: 1;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .stat b {
+        display: block;
+        font-size: 20px;
+      }
+      .stat span {
+        font-size: 10px;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      ul {
+        list-style: none;
+        margin: 0 0 12px;
+        padding: 0;
+      }
+      li {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        padding: 4px 0;
+        border-bottom: 1px solid #f3f3f3;
+      }
+      li.empty {
+        color: #999;
+        justify-content: center;
+        border: none;
+        padding: 14px 0;
+      }
+      button {
+        font: inherit;
+        font-size: 11px;
+        color: #888;
+        background: transparent;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        color: #444;
+      }
+      .footer {
+        font-size: 10px;
+        color: #aaa;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AI-DLP — Prompt Secret Guard</h1>
+    <p class="sub">Local-only. No sign-in. No telemetry.</p>
+
+    <div class="stats">
+      <div class="stat">
+        <b id="total">0</b>
+        <span>Caught</span>
+      </div>
+      <div class="stat">
+        <b id="blocked">0</b>
+        <span>Blocked</span>
+      </div>
+    </div>
+
+    <ul id="breakdown"></ul>
+
+    <button id="clear">Clear local history</button>
+    <p class="footer">
+      Counts are stored only on this device.
+    </p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

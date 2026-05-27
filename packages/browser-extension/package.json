@@ -1,0 +1,21 @@
+{
+  "name": "@ai-dlp/browser-extension",
+  "version": "0.1.0",
+  "description": "AI-DLP browser extension — prompt-time secret detection for browser LLMs.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-dlp/detector": "*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}
