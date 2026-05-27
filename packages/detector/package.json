@@ -1,0 +1,33 @@
+{
+  "name": "@ai-dlp/detector",
+  "version": "0.1.0",
+  "description": "Local-first secret detection engine for AI-DLP. Zero dependencies, runs in browser, IDE, and CLI.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "ai-dlp-scan": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.cli.json",
+    "build:lib": "tsc -p tsconfig.json",
+    "test": "tsx test/run.ts",
+    "test:watch": "tsx --watch test/run.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "scan": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
