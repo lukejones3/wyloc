@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI-DLP — Privacy Policy</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 640px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: #222;
+      line-height: 1.6;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin-top: 28px; }
+    .date { color: #888; font-size: 13px; margin-bottom: 24px; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    a { color: #0d9668; }
+  </style>
+</head>
+<body>
+  <h1>AI-DLP — Prompt Secret Guard</h1>
+  <h2>Privacy Policy</h2>
+  <p class="date">Effective date: May 27, 2026</p>
+
+  <h2>What AI-DLP does</h2>
+  <p>AI-DLP is a browser extension that detects credentials, API keys,
+  and other secrets in text you are about to submit through any web
+  page. It warns you before sensitive data leaves your machine.</p>
+
+  <h2>Data we collect</h2>
+  <p><strong>None.</strong></p>
+  <p>AI-DLP does not collect, transmit, store, or share any personal
+  data, browsing data, prompt text, or secret values. All detection
+  runs locally in your browser. No data is sent to any server.</p>
+
+  <h2>What stays on your device</h2>
+  <ul>
+    <li><strong>Incident counts</strong> — when the extension detects a
+    secret, it stores a metadata-only record in
+    <code>chrome.storage.local</code> on your device. This record
+    contains only: timestamp, secret type (e.g. "AWS access key"),
+    detection confidence, and the action taken (warned or blocked).
+    It does <em>not</em> contain the secret value, the prompt text,
+    or any surrounding context.</li>
+    <li><strong>No raw text is ever stored.</strong> The prompt content
+    is scanned in memory and immediately discarded. It is never written
+    to disk, never logged, and never transmitted.</li>
+  </ul>
+
+  <h2>Network activity</h2>
+  <p>AI-DLP makes <strong>zero network requests</strong>. The extension
+  contains no analytics, no telemetry, no crash reporting, no update
+  pings, and no remote code loading. You can verify this by inspecting
+  the extension's network tab in Chrome DevTools — it will always be
+  empty.</p>
+
+  <h2>Permissions</h2>
+  <ul>
+    <li><strong>&lt;all_urls&gt;</strong> — required so the content
+    script can run on any page and detect secrets before submission,
+    regardless of which website you are using.</li>
+    <li><strong>storage</strong> — used to store metadata-only incident
+    counts locally on your device.</li>
+  </ul>
+  <p>No other permissions are requested. The extension does not access
+  your browsing history, bookmarks, downloads, cookies, or any other
+  browser data.</p>
+
+  <h2>Third parties</h2>
+  <p>AI-DLP shares no data with any third party. There are no
+  third-party SDKs, libraries, or services embedded in the extension
+  that transmit data.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, the updated version will be posted at this
+  URL with a new effective date. Significant changes will be noted in
+  the extension's changelog.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: <a href="mailto:luke@landerjob.com">luke@landerjob.com</a></p>
+</body>
+</html>
