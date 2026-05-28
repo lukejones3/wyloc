@@ -1,5 +1,5 @@
 {
-  "name": "@ai-dlp/detector",
+  "name": "@wyloc/detector",
   "version": "0.1.0",
   "description": "Local-first secret detection engine for AI-DLP. Zero dependencies, runs in browser, IDE, and CLI.",
   "license": "UNLICENSED",

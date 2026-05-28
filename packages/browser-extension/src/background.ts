@@ -9,7 +9,7 @@
  * text and secret values by construction in the detector.
  */
 
-import type { IncidentMetadata } from "@ai-dlp/detector";
+import type { IncidentMetadata } from "@wyloc/detector";
 
 interface StoredIncident extends IncidentMetadata {
   siteId: string;

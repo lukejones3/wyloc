@@ -12,8 +12,8 @@
  * the content script.
  */
 
-import type { ScanResult } from "@ai-dlp/detector";
-import { buildIncidents } from "@ai-dlp/detector";
+import type { ScanResult } from "@wyloc/detector";
+import { buildIncidents } from "@wyloc/detector";
 
 export interface IncidentMessage {
   kind: "ai-dlp/incidents";

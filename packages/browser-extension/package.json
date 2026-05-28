@@ -1,5 +1,5 @@
 {
-  "name": "@ai-dlp/browser-extension",
+  "name": "@wyloc/browser-extension",
   "version": "0.1.0",
   "description": "AI-DLP browser extension — prompt-time secret detection for browser LLMs.",
   "license": "UNLICENSED",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-dlp/detector": "*"
+    "@wyloc/detector": "*"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",

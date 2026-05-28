@@ -14,8 +14,8 @@
  * No background scanning, no telemetry, no forced sign-in.
  */
 
-import { scan } from "@ai-dlp/detector";
-import type { ScanResult } from "@ai-dlp/detector";
+import { scan } from "@wyloc/detector";
+import type { ScanResult } from "@wyloc/detector";
 import { adapterFor, type SiteAdapter } from "./adapters/index.js";
 import { showBanner, clearBanner } from "./ui/banner.js";
 import { reportIncidents } from "./incident-bridge.js";

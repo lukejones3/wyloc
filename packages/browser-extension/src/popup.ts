@@ -6,7 +6,7 @@
  * network — reads straight from chrome.storage.local.
  */
 
-import type { IncidentMetadata } from "@ai-dlp/detector";
+import type { IncidentMetadata } from "@wyloc/detector";
 
 const STORAGE_KEY = "wyloc/incidents";
 

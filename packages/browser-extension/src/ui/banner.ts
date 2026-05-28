@@ -13,8 +13,8 @@
  * is never written into the DOM we create.
  */
 
-import type { ScanResult } from "@ai-dlp/detector";
-import { maskValue } from "@ai-dlp/detector";
+import type { ScanResult } from "@wyloc/detector";
+import { maskValue } from "@wyloc/detector";
 
 export interface BannerCallbacks {
   /** User chose to proceed despite findings (warn dismiss or block override). */
