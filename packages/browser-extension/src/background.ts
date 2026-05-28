@@ -15,7 +15,7 @@ interface StoredIncident extends IncidentMetadata {
   siteId: string;
 }
 
-const STORAGE_KEY = "ai-dlp/incidents";
+const STORAGE_KEY = "wyloc/incidents";
 /** Cap local history so storage cannot grow without bound. */
 const MAX_INCIDENTS = 500;
 
@@ -26,7 +26,7 @@ interface IncomingMessage {
 }
 
 chrome.runtime.onMessage.addListener((msg: IncomingMessage) => {
-  if (msg?.kind !== "ai-dlp/incidents" || !Array.isArray(msg.incidents)) {
+  if (msg?.kind !== "wyloc/incidents" || !Array.isArray(msg.incidents)) {
     return;
   }
   void persist(msg.incidents, msg.siteId ?? "unknown");

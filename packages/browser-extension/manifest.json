@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI-DLP — Prompt Secret Guard",
+  "name": "Wyloc — Prompt Secret Guard",
   "version": "0.3.0",
-  "description": "Detects credentials and secrets before you send them — anywhere in the browser. Local-only, no sign-in, no telemetry.",
+  "description": "Detects credentials and secrets before you send them. Local-first, no sign-in, no telemetry.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -16,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "AI-DLP",
+    "default_title": "Wyloc",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",

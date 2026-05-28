@@ -1,7 +1,7 @@
 # Chrome Web Store Listing
 
 ## Name
-AI-DLP — Prompt Secret Guard
+Wyloc — Prompt Secret Guard
 
 ## Short description (132 char max)
 Detects API keys, passwords, and secrets before you send them. Works everywhere. Local-only — nothing leaves your browser.
@@ -10,11 +10,11 @@ Detects API keys, passwords, and secrets before you send them. Works everywhere.
 
 Stop leaking credentials to AI tools.
 
-Developers paste API keys, database URLs, .env files, and private keys into ChatGPT, Claude, Gemini, Copilot, and dozens of other tools every day. AI-DLP catches those secrets before they leave your machine.
+Developers paste API keys, database URLs, .env files, and private keys into ChatGPT, Claude, Gemini, Copilot, and dozens of other tools every day. Wyloc catches those secrets before they leave your machine.
 
 HOW IT WORKS
 
-When you press Enter or click Send on any web page, AI-DLP scans your text for credentials. If it finds one, it holds submission and shows a clear, non-intrusive banner:
+When you press Enter or click Send on any web page, Wyloc scans your text for credentials. If it finds one, it holds submission and shows a clear, non-intrusive banner:
 
 • Block — high-confidence production secrets (AWS keys, database URLs with passwords, private keys) are held until you explicitly choose to proceed.
 • Warn — possible secrets (JWTs, test keys, high-entropy strings) show a dismissable warning.
@@ -44,7 +44,7 @@ PRIVACY — BY DESIGN, NOT BY PROMISE
 
 WORKS EVERYWHERE
 
-AI-DLP protects you on every website — not just a curated list of AI tools. ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, DeepSeek, Mistral, Slack, Jira, email, internal tools — if it has a text input and you're about to paste a secret, AI-DLP catches it.
+Wyloc protects you on every website — not just a curated list of AI tools. ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, DeepSeek, Mistral, Slack, Jira, email, internal tools — if it has a text input and you're about to paste a secret, Wyloc catches it.
 
 BUILT FOR DEVELOPERS
 

@@ -8,7 +8,7 @@
 
 import type { IncidentMetadata } from "@ai-dlp/detector";
 
-const STORAGE_KEY = "ai-dlp/incidents";
+const STORAGE_KEY = "wyloc/incidents";
 
 interface StoredIncident extends IncidentMetadata {
   siteId: string;

@@ -25,7 +25,7 @@ export interface BannerCallbacks {
   onDismiss: () => void;
 }
 
-const HOST_ID = "ai-dlp-banner-host";
+const HOST_ID = "wyloc-banner-host";
 
 /** Remove any existing banner. Safe to call when none exists. */
 export function clearBanner(): void {
