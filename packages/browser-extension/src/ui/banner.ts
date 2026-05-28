@@ -64,7 +64,7 @@ function labelFor(type: string): string {
  */
 export function showBanner(
   result: ScanResult,
-  mount: HTMLElement,
+  _mount: HTMLElement,
   callbacks: BannerCallbacks,
 ): void {
   clearBanner();
@@ -89,6 +89,22 @@ export function showBanner(
     ? "Sending this would share a credential with an AI tool. Redact it, or send anyway if it's safe."
     : "Review before sending. You can redact it, or continue if it's fine.";
 
+  // Anchor the host as a fixed overlay so it is ALWAYS visible,
+  // regardless of where the user is scrolled. Prompt inputs sit at the
+  // bottom of the viewport on essentially every LLM site, so we float
+  // the banner just above center-bottom. This fixes the bug where a
+  // banner inserted into the document flow rendered off-screen on long
+  // pages and the user couldn't see why submission was held.
+  host.style.cssText = [
+    "position: fixed",
+    "left: 50%",
+    "bottom: 120px",
+    "transform: translateX(-50%)",
+    "z-index: 2147483647",
+    "width: min(560px, calc(100vw - 32px))",
+    "pointer-events: auto",
+  ].join(";");
+
   shadow.innerHTML = `
     <style>
       :host { all: initial; }
@@ -96,12 +112,12 @@ export function showBanner(
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         border-radius: 10px;
         padding: 12px 14px;
-        margin: 8px 0;
         border: 1px solid ${isBlock ? "#e0b4b4" : "#e6d8a8"};
         background: ${isBlock ? "#fdf3f3" : "#fdfaef"};
         color: #2b2b2b;
         font-size: 13px;
         line-height: 1.45;
+        box-shadow: 0 8px 28px rgba(0,0,0,0.18);
       }
       .head { font-weight: 600; margin-bottom: 4px; }
       .explain { color: #555; margin-bottom: 8px; }
@@ -168,7 +184,11 @@ export function showBanner(
       callbacks.onDismiss();
     });
 
-  mount.parentElement?.insertBefore(host, mount);
+  // Fixed-position overlay: append to body so it floats above page
+  // content. The `mount` argument is retained for API compatibility and
+  // potential future precise-anchoring, but is no longer used for
+  // placement — the overlay is viewport-anchored and always visible.
+  document.body.appendChild(host);
 }
 
 /** Minimal HTML escape for the masked-value strings we render. */
