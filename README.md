@@ -47,14 +47,14 @@ This is a monorepo with two packages:
     git clone https://github.com/lukejones3/wyloc.git
     cd wyloc
     npm install
-    npm run build --workspace @ai-dlp/detector
-    npm run build --workspace @ai-dlp/browser-extension
+    npm run build --workspace @wyloc/detector
+    npm run build --workspace @wyloc/browser-extension
 
 Then load `packages/browser-extension/dist/` as an unpacked extension at `chrome://extensions` (enable Developer mode first).
 
 ### Run the detector tests
 
-    npm test --workspace @ai-dlp/detector
+    npm test --workspace @wyloc/detector
 
 85 fixture tests cover detection accuracy across real-shaped (but fake) secrets and realistic false-positive decoys.
 
