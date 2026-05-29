@@ -1,4 +1,4 @@
-# @ai-dlp/detector
+# @wyloc/detector
 
 Local-first secret detection engine for **AI-DLP** — prompt-time Data Loss
 Prevention for generative AI.
@@ -25,15 +25,15 @@ plugin, and the CLI — there is no per-surface fork.
 
 ```bash
 npm install
-npm test            # run fixture + unit suite (85 checks)
-npm run build       # compile to dist/ (library + CLI)
+npm test            # compile patterns + run fixture + unit suite (518 checks)
+npm run build       # compile patterns, then to dist/ (library + CLI)
 npm run typecheck   # verify the core stays Node-free
 ```
 
 ## Library API
 
 ```ts
-import { scan, redact, buildIncidents } from "@ai-dlp/detector";
+import { scan, redact, buildIncidents } from "@wyloc/detector";
 
 const result = scan(promptText);
 // result.findings  -> Finding[]   (type, span, confidence, environment)
@@ -72,10 +72,9 @@ CI guard.
 
 Findings come from five layers, applied in order (plan §5):
 
-1. **Known patterns** — vendor-anchored regexes (AWS, GCP, Azure,
-   GitHub, GitLab, Slack, Stripe, OpenAI, Anthropic, JWT, OAuth, PEM
-   keys, DB URLs). Highest precision; the only layer the policy engine
-   will `block` on.
+1. **Known patterns** — 80 vendor/format patterns from the JSON pattern
+   engine, evaluated by tier (see **Pattern coverage** below). Highest
+   precision; the only layer the policy engine will `block` on.
 2. **Entropy** — Shannon entropy over secret-shaped tokens. Hashes,
    UUIDs, and identifier-shaped tokens are excluded. Emits `low`/`medium`
    only — entropy never blocks.
@@ -92,6 +91,51 @@ Findings come from five layers, applied in order (plan §5):
 block-eligible vendor rule, and environment is not `dev`. A wrong block
 loses a user; a wrong warn is recoverable. The bar is asymmetric on
 purpose (plan §6).
+
+## Pattern coverage
+
+**80 patterns** compiled from JSON definitions, across three tiers. Each
+tier is a distinct evaluation strategy with a different false-positive
+profile:
+
+### Tier 1 — prefixed (70)
+
+Anchored on a distinctive vendor prefix/structure; a regex match alone is
+near-zero-false-positive, so these fire on shape with no context required.
+
+| Group | Vendors |
+|---|---|
+| Cloud / infra | AWS (access key id, secret-key assignment, Bedrock), Azure storage key, GCP API key, DigitalOcean (access / PAT / refresh), Cloudflare origin-CA, Heroku, Fly.io, Doppler, Databricks, Dynatrace, HashiCorp TF, Pulumi, Vault (batch / service), Artifactory (api / reference) |
+| Source control / CI | GitHub (classic + fine-grained), GitLab (11 token types) |
+| Comms / collab | Slack (bot + app), Atlassian, Linear, Notion |
+| Payments | Stripe (sk/rk × live/test), Square |
+| AI / ML | OpenAI, Anthropic, Hugging Face (user + org) |
+| SaaS / dev tools | SendGrid, Shopify (4), npm, PyPI, Postman, PlanetScale (3), New Relic (3), Sentry (org + user), Grafana (3), Twilio, Airtable PAT |
+| Generic format | OAuth bearer |
+
+### Tier 2 — structural (4)
+
+A recognizable shape rather than a fixed prefix; an optional named
+`structuralValidator` hook can reject shapes that match the regex but fail
+a deeper check. JWT, PEM private key, database URL with embedded
+credentials, GCP service-account JSON.
+
+### Tier 3 — generic high-entropy, context-gated (6)
+
+Prefixless shapes (bare hex / base64 / structured blobs) that appear
+constantly in innocent text. These fire **only** when a `requiredContext`
+keyword sits within the context window, the value clears an
+`entropyThreshold`, and it survives the hash/UUID and char-mix guards. The
+gate is what protects the false-positive rate.
+
+| Pattern | Gate keywords | Notes |
+|---|---|---|
+| AWS secret access key (contextual) | `aws`, `amazon`, `secret access key`, … | also opens on a nearby `AKIA…` id (contextRegex) |
+| Mailchimp | `mailchimp` | `-usNN` datacenter suffix |
+| Dropbox long-lived | `dropbox` | `AAAAAAAAAA` marker |
+| Dropbox short-lived | `dropbox` | `sl.` prefix |
+| Okta | `okta` | `00` prefix, entropy ≥ 4 |
+| Cohere | `co_api_key`, `cohere_api_key` | assignment-only gate (bare "cohere" excluded — common English word) |
 
 ## Tuning
 
