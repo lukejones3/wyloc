@@ -37,6 +37,18 @@ export const positiveFixtures: PositiveFixture[] = [
     expectAction: "block",
   },
   {
+    name: "AWS secret key beside its access key id (contextual)",
+    text: "aws creds:\nAKIA2RZ4QF7KJ9XW1MTL\nkR9wPzX2mB5nQ8vL3cF6dG1hY4uZ7aE0iO2sT5xW",
+    expectType: "aws_secret_key",
+    expectAction: "block",
+  },
+  {
+    name: "AWS secret key in non-standard assignment (contextual)",
+    text: 'export AWS_SECRET_KEY="kR9wPzX2mB5nQ8vL3cF6dG1hY4uZ7aE0iO2sT5xW"',
+    expectType: "aws_secret_key",
+    expectAction: "block",
+  },
+  {
     name: "GCP API key",
     text: "const key = 'AIzaSyD3kL9mN2pQ7rS4tU6vW8xY1zA5bC0dEfG'",
     expectType: "gcp_api_key",

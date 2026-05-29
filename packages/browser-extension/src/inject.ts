@@ -12,9 +12,13 @@
  * see the exact text the page is about to write, hand it to the isolated
  * world for rehydration (mock → real value), and write back the result.
  *
- * Communication crosses the world boundary via CustomEvents on `window`,
- * which both worlds share. No secrets live in this script; it only
- * forwards text and awaits the processed version.
+ * Communication crosses the world boundary via `window.postMessage`.
+ * A `CustomEvent.detail` created in the isolated world is NOT readable
+ * from this main world (the page cannot reach into content-script
+ * objects), so the bridge's reply must use postMessage, which
+ * structured-clones its payload and therefore crosses the boundary in
+ * both directions. No secrets live in this script; it only forwards text
+ * and awaits the processed version.
  */
 
 (function installClipboardProxy() {
@@ -39,24 +43,29 @@
       const id = Math.random().toString(36).slice(2);
       let settled = false;
 
-      const onProcessed = (e: Event) => {
-        const ce = e as CustomEvent<{ id: string; text: string }>;
-        if (ce.detail?.id !== id) return;
+      const onMessage = (e: MessageEvent) => {
+        // Only accept our own reply from this same window/origin.
+        if (e.source !== window || e.origin !== window.location.origin) return;
+        const d = e.data as
+          | { __wyloc?: string; id?: string; text?: string }
+          | null;
+        if (!d || d.__wyloc !== "processed" || d.id !== id) return;
         cleanup();
-        original(ce.detail.text).then(resolve, reject);
+        original(d.text ?? text).then(resolve, reject);
       };
 
       const cleanup = () => {
         settled = true;
-        window.removeEventListener("WylocTextProcessed", onProcessed);
+        window.removeEventListener("message", onMessage);
       };
 
-      window.addEventListener("WylocTextProcessed", onProcessed);
+      window.addEventListener("message", onMessage);
 
-      // Ask the isolated world to rehydrate.
-      window.dispatchEvent(
-        new CustomEvent("WylocCheckRehydration", { detail: { id, text } }),
-      );
+      // Ask the isolated world to rehydrate. Self-targeted postMessage is
+      // delivered only to listeners on THIS window (not other frames), so
+      // the secret-bearing reply never leaves this frame; the receive guard
+      // above re-validates source and origin regardless.
+      window.postMessage({ __wyloc: "check", id, text }, "*");
 
       // Safety: if the isolated world doesn't answer quickly (e.g. no
       // mappings, or content script not present), fall back to writing

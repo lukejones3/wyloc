@@ -457,6 +457,29 @@ function applySwap(input: HTMLElement, result: ScanResult): void {
 //      injected into the main world forwards the text to us here.
 installCopyRehydration();
 installClipboardProxyBridge();
+installPopupMappingBridge();
+
+/**
+ * Hand the current session's mock→real mappings to the popup on request.
+ *
+ * The popup asks the active tab's top frame live (chrome.tabs.sendMessage,
+ * frameId 0) so the user can recover a real credential when auto-
+ * rehydration didn't fire (e.g. the model paraphrased the token). These
+ * values are sensitive and ephemeral: they exist ONLY in this content
+ * script's in-memory `swapMappings`, are wiped on `pagehide`, and are
+ * NEVER written to chrome.storage or persisted anywhere. We answer
+ * synchronously with a fresh snapshot — nothing is cached cross-context.
+ */
+function installPopupMappingBridge(): void {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if ((msg as { kind?: string } | null)?.kind !== "wyloc/get-mappings") {
+      return;
+    }
+    sendResponse({
+      mappings: swapMappings.map((m) => ({ mock: m.mock, real: m.real })),
+    });
+  });
+}
 
 function installCopyRehydration(): void {
   document.addEventListener(
@@ -478,18 +501,20 @@ function installCopyRehydration(): void {
 
 /**
  * Bridge for the main-world clipboard proxy (see inject.ts). The proxy
- * dispatches `WylocCheckRehydration` with the text the page is about to
- * write; we rehydrate and dispatch `WylocTextProcessed` back.
+ * posts a `{ __wyloc: "check" }` message with the text the page is about
+ * to write; we rehydrate and post `{ __wyloc: "processed" }` back. We use
+ * postMessage (not CustomEvent) because a CustomEvent.detail created here
+ * in the isolated world is not readable from the main-world proxy.
  */
 function installClipboardProxyBridge(): void {
-  window.addEventListener("WylocCheckRehydration", (e: Event) => {
-    const ce = e as CustomEvent<{ id: string; text: string }>;
-    const id = ce.detail?.id;
-    const text = ce.detail?.text ?? "";
+  window.addEventListener("message", (e: MessageEvent) => {
+    if (e.source !== window || e.origin !== window.location.origin) return;
+    const d = e.data as { __wyloc?: string; id?: string; text?: string } | null;
+    if (!d || d.__wyloc !== "check") return;
+    const id = d.id;
+    const text = d.text ?? "";
     const out = swapMappings.length > 0 ? rehydrateSmart(text) : text;
-    window.dispatchEvent(
-      new CustomEvent("WylocTextProcessed", { detail: { id, text: out } }),
-    );
+    window.postMessage({ __wyloc: "processed", id, text: out }, "*");
   });
 }
 

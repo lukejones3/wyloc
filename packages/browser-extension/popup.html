@@ -80,6 +80,49 @@
         color: #aaa;
         margin-top: 10px;
       }
+      .map-section {
+        display: none;
+        margin-bottom: 12px;
+      }
+      .map-head {
+        font-size: 11px;
+        font-weight: 600;
+        color: #444;
+        margin: 0 0 2px;
+      }
+      .map-note {
+        font-size: 10px;
+        color: #999;
+        margin: 0 0 6px;
+      }
+      li.map {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        align-items: stretch;
+        cursor: pointer;
+        padding: 6px 4px;
+      }
+      li.map:hover {
+        background: #f7f7f7;
+      }
+      li.map code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        word-break: break-all;
+        white-space: normal;
+      }
+      li.map .mock {
+        color: #999;
+      }
+      li.map .real {
+        color: #1a1a1a;
+      }
+      li.map.copied .real::after {
+        content: " ✓ copied";
+        color: #2f6f4f;
+        font-family: -apple-system, sans-serif;
+      }
     </style>
   </head>
   <body>
@@ -98,6 +141,15 @@
     </div>
 
     <ul id="breakdown"></ul>
+
+    <div class="map-section" id="mappings-section">
+      <p class="map-head">Swapped secrets (this tab)</p>
+      <p class="map-note">
+        Real values live only in this tab's memory and vanish when it
+        closes. Click a row to copy.
+      </p>
+      <ul id="mappings"></ul>
+    </div>
 
     <button id="clear">Clear local history</button>
     <p class="footer">

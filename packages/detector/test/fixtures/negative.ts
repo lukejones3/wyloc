@@ -76,6 +76,18 @@ export const negativeFixtures: NegativeFixture[] = [
     text: "API_KEY=REDACTED in the logs we ship to the dashboard",
   },
   {
+    name: "40-char base64 blob with NO AWS context",
+    text: "The CI artifact fingerprint is tB6yQ2nW9kP4mZ7vL1cF8dG3hX5uR0aE2iO6sJ4q after the build step.",
+  },
+  {
+    name: "Git SHA-1 next to the word aws (hash, not a key)",
+    text: "The aws deploy regressed at commit 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b yesterday.",
+  },
+  {
+    name: "Example AWS secret key placeholder",
+    text: "Replace the aws example secret EXAMPLEKEYwJ8xK2pQ7nR4tV9sL1mB3cF6dG0hY5 with your own.",
+  },
+  {
     name: "Long hex color list",
     text: "colors: #ff5733 #33ff57 #3357ff #f0f0f0 #1a1a1a #cccccc #abcdef",
   },

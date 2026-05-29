@@ -45,6 +45,37 @@ async function load(): Promise<StoredIncident[]> {
   }
 }
 
+interface Mapping {
+  mock: string;
+  real: string;
+}
+
+/**
+ * Pull the active tab's live mock→real mappings from its content script.
+ * These are in-memory only (never in chrome.storage) and gone when the
+ * tab closes, so we ask the page directly each time the popup opens. Any
+ * failure (no content script on this tab, e.g. chrome:// pages) yields an
+ * empty list — the section just stays hidden.
+ */
+async function loadMappings(): Promise<Mapping[]> {
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (!tab?.id) return [];
+    const resp = (await chrome.tabs.sendMessage(
+      tab.id,
+      { kind: "wyloc/get-mappings" },
+      { frameId: 0 },
+    )) as { mappings?: Mapping[] } | undefined;
+    const mappings = resp?.mappings;
+    return Array.isArray(mappings) ? mappings : [];
+  } catch {
+    return [];
+  }
+}
+
 function render(incidents: StoredIncident[]): void {
   const total = document.getElementById("total");
   const blocked = document.getElementById("blocked");
@@ -73,8 +104,55 @@ function render(incidents: StoredIncident[]): void {
           .join("");
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Render the live mock→real mappings for the active tab. Real values are
+ * the user's own secrets, shown only in this local popup so they can copy
+ * one back when auto-rehydration missed it. Click a row to copy the real
+ * value. Hidden entirely when there are no swaps in the tab.
+ */
+function renderMappings(mappings: Mapping[]): void {
+  const section = document.getElementById("mappings-section");
+  const list = document.getElementById("mappings");
+  if (!section || !list) return;
+
+  if (mappings.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "block";
+
+  list.innerHTML = mappings
+    .map(
+      (m) =>
+        `<li class="map" data-real="${escapeHtml(m.real)}" title="Click to copy the real value">` +
+        `<code class="mock">${escapeHtml(m.mock)}</code>` +
+        `<code class="real">${escapeHtml(m.real)}</code>` +
+        `</li>`,
+    )
+    .join("");
+
+  for (const li of Array.from(list.querySelectorAll<HTMLLIElement>("li.map"))) {
+    li.addEventListener("click", () => {
+      const real = li.getAttribute("data-real") ?? "";
+      void navigator.clipboard.writeText(real).then(() => {
+        li.classList.add("copied");
+        setTimeout(() => li.classList.remove("copied"), 1000);
+      });
+    });
+  }
+}
+
 async function main(): Promise<void> {
   render(await load());
+  renderMappings(await loadMappings());
 
   const clearBtn = document.getElementById("clear");
   clearBtn?.addEventListener("click", async () => {

@@ -16,7 +16,7 @@ import type { ScanResult } from "@wyloc/detector";
 import { buildIncidents } from "@wyloc/detector";
 
 export interface IncidentMessage {
-  kind: "ai-dlp/incidents";
+  kind: "wyloc/incidents";
   incidents: ReturnType<typeof buildIncidents>;
 }
 
@@ -36,7 +36,7 @@ export function reportIncidents(result: ScanResult, siteId: string): void {
 
     // siteId is attached as adapter context; it is not a secret.
     const message: IncidentMessage & { siteId: string } = {
-      kind: "ai-dlp/incidents",
+      kind: "wyloc/incidents",
       incidents,
       siteId,
     };

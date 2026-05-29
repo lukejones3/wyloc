@@ -90,6 +90,80 @@ function runKnownPatterns(text: string, cfg: DetectorConfig): Finding[] {
   return out;
 }
 
+// --- Layer 1b: AWS secret access key (context-gated) -------------------
+//
+// An AWS secret access key is 40 base64 chars with NO fixed prefix, so in
+// isolation it is indistinguishable from a hash, a random token, or
+// base64 data — flagging every 40-char blob would wreck the false-positive
+// rate. This fires ONLY when AWS-specific context sits within the window
+// (an AKIA/ASIA access key id — secret keys are almost always pasted with
+// their id — or the word "aws"/"amazon", or a "secret access key" phrase)
+// AND the candidate actually looks secret-like (mixed charset, real
+// entropy, not a hex digest). The precise `aws_secret_access_key=<value>`
+// assignment stays in known.ts; this catches the looser real-world paste
+// that the prefix pattern misses.
+const AWS_SECRET_KEY_RE =
+  /(?<![A-Za-z0-9/+])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])/g;
+
+const AWS_ACCESS_KEY_ID_RE = /\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b/;
+
+function hasAwsContext(
+  text: string,
+  start: number,
+  end: number,
+  radius: number,
+): boolean {
+  const from = Math.max(0, start - radius);
+  const to = Math.min(text.length, end + radius);
+  const w = text.slice(from, to);
+  // An access key id beside the candidate is the strongest signal.
+  if (AWS_ACCESS_KEY_ID_RE.test(w)) return true;
+  const lw = w.toLowerCase();
+  return (
+    lw.includes("aws") ||
+    lw.includes("amazon") ||
+    lw.includes("secret access key") ||
+    lw.includes("secret_access_key") ||
+    lw.includes("secretaccesskey")
+  );
+}
+
+function runAwsSecretKey(text: string, cfg: DetectorConfig): Finding[] {
+  const out: Finding[] = [];
+  AWS_SECRET_KEY_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = AWS_SECRET_KEY_RE.exec(text)) !== null) {
+    const value = m[0];
+    const start = m.index;
+    const end = start + value.length;
+    // Guard against zero-width matches (defensive — this pattern can't).
+    if (m.index === AWS_SECRET_KEY_RE.lastIndex) AWS_SECRET_KEY_RE.lastIndex++;
+
+    // Reject hashes/UUIDs and single-character-class blobs, and require the
+    // entropy of a real key. Mirrors the entropy layer's own guards.
+    if (looksLikeHashOrUuid(value)) continue;
+    if (!hasSecretLikeCharMix(value)) continue;
+    if (shannonEntropy(value) < 3.5) continue;
+    // The gate: only emit when AWS context is nearby.
+    if (!hasAwsContext(text, start, end, cfg.contextWindow)) continue;
+    if (isAllowlisted(text, start, end, value, cfg.allowlist)) continue;
+
+    out.push({
+      layer: "known_pattern",
+      type: "aws_secret_key",
+      confidence: "high",
+      start,
+      end,
+      value,
+      environment: inferEnvironment(text, start, end, cfg.contextWindow),
+      reason:
+        "Looks like an AWS secret access key (40-char key with AWS context nearby).",
+      ruleId: "aws.secret_access_key_contextual",
+    });
+  }
+  return out;
+}
+
 // --- Layer 2 -----------------------------------------------------------
 function runEntropy(text: string, cfg: DetectorConfig): Finding[] {
   const out: Finding[] = [];
@@ -203,6 +277,7 @@ export function detect(text: string, cfg: DetectorConfig): Finding[] {
   if (text.length === 0) return [];
   const raw = [
     ...runKnownPatterns(text, cfg),
+    ...runAwsSecretKey(text, cfg),
     ...runEntropy(text, cfg),
     ...runStructural(text, cfg),
   ].filter((f) => !cfg.suppressedRuleIds.includes(f.ruleId));
