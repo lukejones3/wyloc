@@ -103,6 +103,14 @@ let approvedText: string | null = null;
 // which uses the site's real submit path.
 let proceedArmed = false;
 let proceedText = "";
+let proceedAt = 0;
+
+// Backstop only. The primary disarm is text divergence from proceedText
+// (see isProceedApproved); this window just guarantees an approval can
+// never permanently disable detection. It must comfortably cover the full
+// event burst for one submit plus the user's click on the real send
+// button — both happen within a fraction of a second of arming.
+const PROCEED_WINDOW_MS = 15_000;
 
 // ── Dummy-swap session state (ephemeral, never persisted) ──────────
 //
@@ -278,14 +286,13 @@ function guardSubmit(e: Event, input: HTMLElement): void {
   const text = readText(input);
   if (text.length === 0) return;
 
-  // "Send anyway" was clicked: let this submit through untouched if the
-  // text still matches what the user approved. Tolerant compare (trim)
-  // so trailing-newline normalization doesn't defeat it.
-  if (proceedArmed && text.trim() === proceedText.trim()) {
-    proceedArmed = false;
-    proceedText = "";
-    return;
-  }
+  // "Send anyway" was clicked: let this submit through untouched while the
+  // approval still applies. Must NOT be consumed on first match — a single
+  // user submit fires several of our listeners (document capture + direct
+  // element listeners, plus beforeinput on contenteditable), each calling
+  // guardSubmit with the same text. Disarming here would let the next
+  // listener re-detect and re-block. See isProceedApproved.
+  if (isProceedApproved(text)) return;
 
   if (approvedText !== null && approvedText === text) {
     approvedText = null;
@@ -324,6 +331,7 @@ function guardSubmit(e: Event, input: HTMLElement): void {
       // of this same text passes straight through without re-prompting.
       proceedArmed = true;
       proceedText = readText(input);
+      proceedAt = Date.now();
     },
     onSwap: () => {
       bannerOpen = false;
@@ -337,6 +345,45 @@ function guardSubmit(e: Event, input: HTMLElement): void {
       bannerOpen = false;
     },
   });
+}
+
+/**
+ * One-shot "Send anyway" approval check, consulted by guardSubmit on
+ * EVERY submit path before scan() runs. Returns true when the current
+ * submit should bypass detection because the user just approved this
+ * exact text.
+ *
+ * It deliberately does NOT disarm on a match. A single user submit fires
+ * multiple of our listeners (document-capture keydown/click + the direct
+ * element listeners, plus a beforeinput on contenteditable), each calling
+ * guardSubmit with the same text within the same instant. Consuming the
+ * approval on the first match would leave proceedArmed=false for the next
+ * listener, which would then re-detect and re-block. Instead we disarm
+ * only when the approval no longer applies:
+ *   - the text diverged from what was approved (user edited it → protection
+ *     re-arms automatically; this is the primary guard), or
+ *   - the time window lapsed (a backstop so detection can never be left
+ *     permanently disabled).
+ * Tolerant trim() compare so trailing-newline normalization in a
+ * contenteditable doesn't defeat the match.
+ */
+function isProceedApproved(text: string): boolean {
+  if (!proceedArmed) return false;
+  if (text.trim() !== proceedText.trim()) {
+    disarmProceed();
+    return false;
+  }
+  if (Date.now() - proceedAt > PROCEED_WINDOW_MS) {
+    disarmProceed();
+    return false;
+  }
+  return true;
+}
+
+function disarmProceed(): void {
+  proceedArmed = false;
+  proceedText = "";
+  proceedAt = 0;
 }
 
 function stop(e: Event): void {
