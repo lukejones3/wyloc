@@ -13,6 +13,12 @@
 import * as esbuild from "esbuild";
 import { cp, mkdir, rm } from "node:fs/promises";
 
+// Resolve the detector's TypeScript source so esbuild bundles it directly.
+// This means a `src/` edit in @wyloc/detector is picked up by a single
+// `npm run build --workspace @wyloc/browser-extension` without a separate
+// detector rebuild step.
+const detectorSrc = new URL("../detector/src/index.ts", import.meta.url).pathname;
+
 const watch = process.argv.includes("--watch");
 const outdir = "dist";
 
@@ -42,6 +48,9 @@ const buildOptions = {
   minify: false,
   sourcemap: false,
   legalComments: "none",
+  alias: {
+    "@wyloc/detector": detectorSrc,
+  },
 };
 
 async function copyStatic() {

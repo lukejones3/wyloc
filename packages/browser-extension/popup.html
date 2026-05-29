@@ -107,6 +107,7 @@
         background: #f7f7f7;
       }
       li.map code {
+        display: block;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 11px;
         word-break: break-all;
@@ -114,9 +115,12 @@
       }
       li.map .mock {
         color: #999;
+        font-size: 10px;
       }
       li.map .real {
         color: #1a1a1a;
+        padding-top: 2px;
+        border-top: 1px solid #f0f0f0;
       }
       li.map.copied .real::after {
         content: " ✓ copied";

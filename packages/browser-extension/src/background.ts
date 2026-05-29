@@ -19,17 +19,26 @@ const STORAGE_KEY = "wyloc/incidents";
 /** Cap local history so storage cannot grow without bound. */
 const MAX_INCIDENTS = 500;
 
+// Set to false before store submission.
+const DEBUG = true;
+
 interface IncomingMessage {
   kind?: string;
   incidents?: IncidentMetadata[];
   siteId?: string;
 }
 
-chrome.runtime.onMessage.addListener((msg: IncomingMessage) => {
+// Async listener: returning a Promise tells Chrome's MV3 runtime to keep
+// the service worker alive until the Promise settles, so the two sequential
+// storage awaits inside persist() are guaranteed to complete before the
+// worker is suspended. A synchronous listener returning undefined would
+// let Chrome terminate the worker before the write finishes.
+chrome.runtime.onMessage.addListener(async (msg: IncomingMessage) => {
   if (msg?.kind !== "wyloc/incidents" || !Array.isArray(msg.incidents)) {
     return;
   }
-  void persist(msg.incidents, msg.siteId ?? "unknown");
+  if (DEBUG) console.debug("[wyloc] background: received", msg.incidents.length, "incident(s) from", msg.siteId);
+  await persist(msg.incidents, msg.siteId ?? "unknown");
 });
 
 async function persist(
@@ -43,9 +52,11 @@ async function persist(
       siteId,
     }));
     const merged = [...existing, ...tagged].slice(-MAX_INCIDENTS);
+    if (DEBUG) console.debug("[wyloc] background: writing", merged.length, "total incident(s) to storage");
     await chrome.storage.local.set({ [STORAGE_KEY]: merged });
-  } catch {
-    /* storage failure must not crash the worker */
+    if (DEBUG) console.debug("[wyloc] background: storage write complete");
+  } catch (err) {
+    if (DEBUG) console.debug("[wyloc] background: persist failed", err);
   }
 }
 

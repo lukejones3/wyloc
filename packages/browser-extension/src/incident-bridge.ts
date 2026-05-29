@@ -20,6 +20,9 @@ export interface IncidentMessage {
   incidents: ReturnType<typeof buildIncidents>;
 }
 
+// Set to false before store submission.
+const DEBUG = true;
+
 /**
  * Fire-and-forget: build incidents and post them to the background
  * worker. Any failure is swallowed — incident logging must never
@@ -40,10 +43,11 @@ export function reportIncidents(result: ScanResult, siteId: string): void {
       incidents,
       siteId,
     };
-    chrome.runtime.sendMessage(message).catch(() => {
-      /* background worker asleep or unavailable — ignore */
+    if (DEBUG) console.debug("[wyloc] content: sending", incidents.length, "incident(s) to background");
+    chrome.runtime.sendMessage(message).catch((err) => {
+      if (DEBUG) console.debug("[wyloc] content: sendMessage failed", err);
     });
-  } catch {
-    /* never let incident logging affect the page */
+  } catch (err) {
+    if (DEBUG) console.debug("[wyloc] content: reportIncidents threw", err);
   }
 }
