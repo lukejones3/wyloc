@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.incoming_mail_token",
+  "displayName": "GitLab incoming mail token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab incoming mail token.",
+  "regex": { "source": "\\bglimt-[0-9a-zA-Z_\\-]{25}\\b" },
+  "fixtures": {
+    "positive": [
+      "glimt-abcdefghijklmnopqrstuvwxy",
+      "GITLAB_MAIL_TOKEN=glimt-ABCDEFGHIJKLMNOPQRSTUVWxy"
+    ],
+    "negative": [
+      "glimt-tooshort",
+      "glft-abcdefghijklmnopqrstu"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "postman.api_token",
+  "displayName": "Postman API token",
+  "tier": "tier_1",
+  "type": "postman_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Postman API token.",
+  "regex": { "source": "\\bPMAK-[a-f0-9]{24}-[a-f0-9]{34}\\b" },
+  "fixtures": {
+    "positive": [
+      "PMAK-abcdef1234567890abcdef12-aabbccdd11223344aabbccdd11223344aa",
+      "POSTMAN_API_KEY=PMAK-1234567890abcdef12345678-abcdefabcdefabcdefabcdefabcdefabcd"
+    ],
+    "negative": [
+      "PMAK-tooshort",
+      "pmak-abcdef1234567890abcdef12-aabbccdd11223344aabbccdd11223344aa"
+    ]
+  }
+}

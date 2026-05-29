@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.scim_token",
+  "displayName": "GitLab SCIM token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab SCIM token.",
+  "regex": { "source": "\\bglsoat-[0-9a-zA-Z_\\-]{20}\\b" },
+  "fixtures": {
+    "positive": [
+      "glsoat-aBcDeFgHiJkLmNoPqRsT",
+      "GITLAB_SCIM_TOKEN=glsoat-aBcDeFgHiJkLmNoPqRsT"
+    ],
+    "negative": [
+      "glsoat-short",
+      "glrt-aBcDeFgHiJkLmNoPqRsT"
+    ]
+  }
+}

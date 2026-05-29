@@ -1,0 +1,20 @@
+{
+  "id": "sentry.user_token",
+  "displayName": "Sentry user token",
+  "tier": "tier_1",
+  "type": "sentry_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Sentry user token.",
+  "regex": { "source": "\\bsntryu_[a-f0-9]{64}\\b" },
+  "fixtures": {
+    "positive": [
+      "sntryu_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "SENTRY_TOKEN=sntryu_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    ],
+    "negative": [
+      "sntryu_tooshort",
+      "sntrys_eyJpYXQiOiAxNjk0NjQ3MDU3"
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "square.access_token",
+  "displayName": "Square access token",
+  "tier": "tier_1",
+  "type": "square_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Square access token.",
+  "regex": { "source": "\\b(?:EAAA|sq0atp-)[\\w\\-]{22,60}\\b" },
+  "fixtures": {
+    "positive": [
+      "EAAAABcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+      "sq0atp-aBcDeFgHiJkLmNoPqRsTuVwXy",
+      "SQUARE_ACCESS_TOKEN=EAAAAaBcDeFgHiJkLmNoPqRsTuVwXyZ01234567890"
+    ],
+    "negative": [
+      "EAAA",
+      "sq0atp-only10c",
+      "sq0itp-aBcDeFgHiJkLmNoPqRsTuVwXy"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "digitalocean.refresh_token",
+  "displayName": "DigitalOcean OAuth refresh token",
+  "tier": "tier_1",
+  "type": "digitalocean_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a DigitalOcean OAuth refresh token.",
+  "regex": { "source": "\\bdor_v1_[a-f0-9]{64}\\b" },
+  "fixtures": {
+    "positive": [
+      "dor_v1_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "DO_REFRESH_TOKEN=dor_v1_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    ],
+    "negative": [
+      "dor_v1_short",
+      "dop_v1_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    ]
+  }
+}

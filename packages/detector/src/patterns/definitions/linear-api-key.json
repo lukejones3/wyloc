@@ -1,0 +1,20 @@
+{
+  "id": "linear.api_key",
+  "displayName": "Linear API key",
+  "tier": "tier_1",
+  "type": "linear_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Linear API key.",
+  "regex": { "source": "\\blin_api_[A-Za-z0-9]{40}\\b" },
+  "fixtures": {
+    "positive": [
+      "lin_api_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD",
+      "LINEAR_API_KEY=lin_api_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
+    ],
+    "negative": [
+      "lin_api_tooshort",
+      "lin_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "new_relic.insert_key",
+  "displayName": "New Relic insert key",
+  "tier": "tier_1",
+  "type": "new_relic_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a New Relic insight insert key.",
+  "regex": { "source": "\\bNRII-[A-Za-z0-9\\-]{32}\\b" },
+  "fixtures": {
+    "positive": [
+      "NRII-aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+      "NRII_INSERT_KEY=NRII-aBcDeFgHiJkLmNoPqRsTuVwXyZ012345"
+    ],
+    "negative": [
+      "NRII-short",
+      "NRJS-abcdef0123456789abc"
+    ]
+  }
+}

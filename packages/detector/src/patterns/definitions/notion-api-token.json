@@ -1,0 +1,20 @@
+{
+  "id": "notion.api_token",
+  "displayName": "Notion API token",
+  "tier": "tier_1",
+  "type": "notion_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Notion API token.",
+  "regex": { "source": "\\bntn_[0-9]{11}[A-Za-z0-9]{35}\\b" },
+  "fixtures": {
+    "positive": [
+      "ntn_11111101234aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678",
+      "NOTION_TOKEN=ntn_98765432109aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678"
+    ],
+    "negative": [
+      "ntn_tooshort",
+      "ntn_1234567890aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678"
+    ]
+  }
+}

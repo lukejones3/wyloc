@@ -1,0 +1,20 @@
+{
+  "id": "slack.app_token",
+  "displayName": "Slack app-level token",
+  "tier": "tier_1",
+  "type": "slack_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Slack app-level token.",
+  "regex": { "source": "\\bxapp-\\d-[A-Z0-9]+-\\d+-[a-z0-9]+" },
+  "fixtures": {
+    "positive": [
+      "xapp-1-A01234567890-1234567890123-abcdef1234567890abcdef1234567890",
+      "SLACK_APP_TOKEN=xapp-2-B09876543210-9876543210987-fedcba9876543210fedcba98"
+    ],
+    "negative": [
+      "xoxb-1234567890-0987654321098-AbCdEfGhIjKlMnOpQrStUvWx",
+      "xapp-notthisformat"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "digitalocean.pat",
+  "displayName": "DigitalOcean personal access token",
+  "tier": "tier_1",
+  "type": "digitalocean_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a DigitalOcean personal access token.",
+  "regex": { "source": "\\bdop_v1_[a-f0-9]{64}\\b" },
+  "fixtures": {
+    "positive": [
+      "dop_v1_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "DIGITALOCEAN_TOKEN=dop_v1_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    ],
+    "negative": [
+      "dop_v1_tooshort",
+      "doo_v1_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    ]
+  }
+}

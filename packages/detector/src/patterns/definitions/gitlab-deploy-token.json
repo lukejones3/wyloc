@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.deploy_token",
+  "displayName": "GitLab deploy token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab deploy token.",
+  "regex": { "source": "\\bgldt-[0-9a-zA-Z_\\-]{20}\\b" },
+  "fixtures": {
+    "positive": [
+      "gldt-aBcDeFgHiJkLmNoPqRsT",
+      "GITLAB_DEPLOY_TOKEN=gldt-aBcDeFgHiJkLmNoPqRsT"
+    ],
+    "negative": [
+      "gldt-short",
+      "glcbt-abc_aBcDeFgHiJkLmNoPqRsT"
+    ]
+  }
+}

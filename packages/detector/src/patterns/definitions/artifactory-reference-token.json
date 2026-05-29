@@ -1,0 +1,20 @@
+{
+  "id": "artifactory.reference_token",
+  "displayName": "JFrog Artifactory reference token",
+  "tier": "tier_1",
+  "type": "artifactory_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a JFrog Artifactory reference token.",
+  "regex": { "source": "\\bcmVmd[A-Za-z0-9]{59}\\b" },
+  "fixtures": {
+    "positive": [
+      "cmVmdaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVw",
+      "ARTIFACTORY_TOKEN=cmVmdaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVw"
+    ],
+    "negative": [
+      "cmVmdtooshort",
+      "cmVmcaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVw"
+    ]
+  }
+}

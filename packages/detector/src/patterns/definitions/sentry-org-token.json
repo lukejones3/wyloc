@@ -1,0 +1,19 @@
+{
+  "id": "sentry.org_token",
+  "displayName": "Sentry organization token",
+  "tier": "tier_1",
+  "type": "sentry_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Sentry organization token.",
+  "regex": { "source": "\\bsntrys_[A-Za-z0-9+/=_]{100,}" },
+  "fixtures": {
+    "positive": [
+      "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"
+    ],
+    "negative": [
+      "sntrys_tooshort",
+      "sntryu_abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+    ]
+  }
+}

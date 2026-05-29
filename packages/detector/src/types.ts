@@ -22,21 +22,56 @@ export type Confidence = "low" | "medium" | "high";
  * See plan Section 9 (Metadata-Only logging).
  */
 export type SecretType =
+  // Cloud platforms
   | "aws_access_key"
   | "aws_secret_key"
+  | "aws_bedrock_key"
   | "gcp_api_key"
   | "gcp_service_account"
   | "azure_token"
+  | "digitalocean_token"
+  | "heroku_key"
+  | "flyio_token"
+  | "cloudflare_key"
+  | "doppler_token"
+  | "databricks_token"
+  | "vault_token"
+  | "pulumi_token"
+  | "hashicorp_token"
+  | "dynatrace_token"
+  // Source control / CI
   | "github_token"
   | "gitlab_token"
+  // Communication / collaboration
   | "slack_token"
+  | "atlassian_token"
+  | "linear_token"
+  | "notion_token"
+  // Payments
   | "stripe_key"
+  | "square_token"
+  // AI / ML
   | "openai_key"
   | "anthropic_key"
+  | "huggingface_token"
+  // SaaS / developer tools
+  | "sendgrid_key"
+  | "shopify_token"
+  | "npm_token"
+  | "pypi_token"
+  | "postman_token"
+  | "planetscale_token"
+  | "new_relic_key"
+  | "sentry_token"
+  | "grafana_token"
+  | "twilio_key"
+  | "artifactory_key"
+  // Standard formats
   | "jwt"
   | "oauth_bearer"
   | "private_key"
   | "database_url"
+  // Generic / structural
   | "generic_api_key"
   | "high_entropy_string"
   | "env_assignment";

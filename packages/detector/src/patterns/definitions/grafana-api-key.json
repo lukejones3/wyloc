@@ -1,0 +1,19 @@
+{
+  "id": "grafana.api_key",
+  "displayName": "Grafana API key",
+  "tier": "tier_1",
+  "type": "grafana_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Grafana API key.",
+  "regex": { "source": "\\beyJrIjoi[A-Za-z0-9+/=]{70,400}\\b" },
+  "fixtures": {
+    "positive": [
+      "eyJrIjoiaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDE"
+    ],
+    "negative": [
+      "eyJrIjoitooshort",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozj"
+    ]
+  }
+}

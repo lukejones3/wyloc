@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.kubernetes_agent_token",
+  "displayName": "GitLab Kubernetes agent token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab Kubernetes agent token.",
+  "regex": { "source": "\\bglagent-[0-9a-zA-Z_\\-]{50}\\b" },
+  "fixtures": {
+    "positive": [
+      "glagent-aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmN",
+      "GITLAB_AGENT_TOKEN=glagent-aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmN"
+    ],
+    "negative": [
+      "glagent-tooshort",
+      "gldt-aBcDeFgHiJkLmNoPqRsT"
+    ]
+  }
+}

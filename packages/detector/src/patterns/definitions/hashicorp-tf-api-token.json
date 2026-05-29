@@ -1,0 +1,20 @@
+{
+  "id": "hashicorp.tf_api_token",
+  "displayName": "HashiCorp Terraform API token",
+  "tier": "tier_1",
+  "type": "hashicorp_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a HashiCorp Terraform Cloud API token.",
+  "regex": { "source": "[a-z0-9]{14}\\.atlasv1\\.[a-z0-9\\-_=]{60,70}" },
+  "fixtures": {
+    "positive": [
+      "abcdefghijklmn.atlasv1.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwx",
+      "TF_API_TOKEN=abcdefghijklmn.atlasv1.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwx"
+    ],
+    "negative": [
+      "abcdef.atlasv1.abcdefghijklmnopqrstuvwxyz",
+      "abcdefghijklmn.atlasv2.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwx"
+    ]
+  }
+}

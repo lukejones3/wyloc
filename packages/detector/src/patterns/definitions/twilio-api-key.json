@@ -1,0 +1,21 @@
+{
+  "id": "twilio.api_key",
+  "displayName": "Twilio API key SID",
+  "tier": "tier_1",
+  "type": "twilio_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Twilio API key SID.",
+  "regex": { "source": "\\bSK[0-9a-fA-F]{32}\\b" },
+  "fixtures": {
+    "positive": [
+      "SKabcdef1234567890abcdef12345678ab",
+      "TWILIO_API_KEY=SK1234567890abcdef1234567890abcdef"
+    ],
+    "negative": [
+      "SKtooshort",
+      "SK1234567890abcdef1234567890abcdefextratoolong",
+      "ACabcdef0123456789abcdef01234567"
+    ]
+  }
+}

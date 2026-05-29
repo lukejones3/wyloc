@@ -1,0 +1,20 @@
+{
+  "id": "planetscale.api_token",
+  "displayName": "PlanetScale API token",
+  "tier": "tier_1",
+  "type": "planetscale_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a PlanetScale API token.",
+  "regex": { "source": "\\bpscale_tkn_[A-Za-z0-9=\\.\\-_]{32,64}\\b" },
+  "fixtures": {
+    "positive": [
+      "pscale_tkn_abcdefghijklmnopqrstuvwxyz01234567",
+      "PLANETSCALE_TOKEN=pscale_tkn_aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567890"
+    ],
+    "negative": [
+      "pscale_tkn_short",
+      "pscale_oauth_abcdefghijklmnopqrstuvwxyz01234567"
+    ]
+  }
+}

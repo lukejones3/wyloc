@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.runner_registration_token",
+  "displayName": "GitLab runner registration token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab runner registration token.",
+  "regex": { "source": "\\bGR1348941[\\w\\-]{20}\\b" },
+  "fixtures": {
+    "positive": [
+      "GR1348941abcdefghijklmnopqrst",
+      "GITLAB_RUNNER_TOKEN=GR1348941ABCDEFGHIJKLMNOPQRst"
+    ],
+    "negative": [
+      "GR1348941short",
+      "GR1348942abcdefghijklmnopqrst"
+    ]
+  }
+}

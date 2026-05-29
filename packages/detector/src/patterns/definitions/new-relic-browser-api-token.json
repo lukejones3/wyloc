@@ -1,0 +1,20 @@
+{
+  "id": "new_relic.browser_api_token",
+  "displayName": "New Relic browser API token",
+  "tier": "tier_1",
+  "type": "new_relic_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a New Relic browser ingest API token.",
+  "regex": { "source": "\\bNRJS-[a-f0-9]{19}\\b" },
+  "fixtures": {
+    "positive": [
+      "NRJS-abcdef0123456789abc",
+      "NEW_RELIC_BROWSER_KEY=NRJS-abcdef0123456789abc"
+    ],
+    "negative": [
+      "NRJS-short",
+      "NR-abcdef0123456789abc"
+    ]
+  }
+}

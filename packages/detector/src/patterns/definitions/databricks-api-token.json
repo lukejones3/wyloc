@@ -1,0 +1,20 @@
+{
+  "id": "databricks.api_token",
+  "displayName": "Databricks API token",
+  "tier": "tier_1",
+  "type": "databricks_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Databricks API token.",
+  "regex": { "source": "\\bdapi[a-f0-9]{32}(?:-[0-9])?\\b" },
+  "fixtures": {
+    "positive": [
+      "dapiabcdef0123456789abcdef0123456789",
+      "DATABRICKS_TOKEN=dapiabcdef0123456789abcdef0123456789"
+    ],
+    "negative": [
+      "dapi_tooshort",
+      "dapi12345 is too short for a databricks token"
+    ]
+  }
+}

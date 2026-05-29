@@ -1,0 +1,20 @@
+{
+  "id": "shopify.private_app_access_token",
+  "displayName": "Shopify private app access token",
+  "tier": "tier_1",
+  "type": "shopify_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Shopify private app access token.",
+  "regex": { "source": "shppa_[a-fA-F0-9]{32}" },
+  "fixtures": {
+    "positive": [
+      "shppa_abcdef0123456789abcdef0123456789",
+      "SHOPIFY_PRIVATE_APP_TOKEN=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"
+    ],
+    "negative": [
+      "shppa_short",
+      "shpat_abcdef0123456789abcdef0123456789"
+    ]
+  }
+}

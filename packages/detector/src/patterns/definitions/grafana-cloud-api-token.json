@@ -1,0 +1,20 @@
+{
+  "id": "grafana.cloud_api_token",
+  "displayName": "Grafana Cloud API token",
+  "tier": "tier_1",
+  "type": "grafana_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Grafana Cloud API token.",
+  "regex": { "source": "\\bglc_[A-Za-z0-9+/=]{32,400}\\b" },
+  "fixtures": {
+    "positive": [
+      "glc_eyJvIjoiMTIzNDU2IiwibiI6ImFiYy10ZXN0IiwiayI6ImFiY2RlZmciLCJtIjp7InIiOiJ1cy1lYXN0LTAifX0=",
+      "GRAFANA_CLOUD_TOKEN=glc_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgH"
+    ],
+    "negative": [
+      "glc_short",
+      "glsa_abcdefghijklmnopqrstuvwxyz012345_abcdef12"
+    ]
+  }
+}

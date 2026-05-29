@@ -1,0 +1,19 @@
+{
+  "id": "vault.batch_token",
+  "displayName": "HashiCorp Vault batch token",
+  "tier": "tier_1",
+  "type": "vault_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a HashiCorp Vault batch token.",
+  "regex": { "source": "\\bhvb\\.[\\w\\-]{138,300}\\b" },
+  "fixtures": {
+    "positive": [
+      "hvb.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678"
+    ],
+    "negative": [
+      "hvb.tooshort",
+      "hvs.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJ"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "pypi.upload_token",
+  "displayName": "PyPI upload token",
+  "tier": "tier_1",
+  "type": "pypi_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a PyPI upload token.",
+  "regex": { "source": "\\bpypi-AgEIcHlwaS5vcmc[\\w\\-]{50,1000}" },
+  "fixtures": {
+    "positive": [
+      "pypi-AgEIcHlwaS5vcmcaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ",
+      "PYPI_TOKEN=pypi-AgEIcHlwaS5vcmcaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+    ],
+    "negative": [
+      "pypi-AgEIcHlwaS5vcmc_short",
+      "pypi-AgENcHlwaS5vcmcaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+    ]
+  }
+}

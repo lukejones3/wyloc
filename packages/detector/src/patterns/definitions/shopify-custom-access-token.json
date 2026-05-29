@@ -1,0 +1,20 @@
+{
+  "id": "shopify.custom_access_token",
+  "displayName": "Shopify custom access token",
+  "tier": "tier_1",
+  "type": "shopify_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Shopify custom app access token.",
+  "regex": { "source": "shpca_[a-fA-F0-9]{32}" },
+  "fixtures": {
+    "positive": [
+      "shpca_abcdef0123456789abcdef0123456789",
+      "SHOPIFY_TOKEN=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"
+    ],
+    "negative": [
+      "shpca_short",
+      "shpat_abcdef0123456789abcdef0123456789"
+    ]
+  }
+}

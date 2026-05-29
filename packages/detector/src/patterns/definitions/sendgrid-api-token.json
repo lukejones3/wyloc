@@ -1,0 +1,20 @@
+{
+  "id": "sendgrid.api_token",
+  "displayName": "SendGrid API token",
+  "tier": "tier_1",
+  "type": "sendgrid_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a SendGrid API token.",
+  "regex": { "source": "\\bSG\\.[A-Za-z0-9=_\\-\\.]{66}" },
+  "fixtures": {
+    "positive": [
+      "SG.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123",
+      "SENDGRID_API_KEY=SG.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123"
+    ],
+    "negative": [
+      "SG.tooshort",
+      "the sg prefix is used in sendgrid config docs"
+    ]
+  }
+}

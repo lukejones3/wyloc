@@ -1,0 +1,19 @@
+{
+  "id": "atlassian.api_token",
+  "displayName": "Atlassian API token",
+  "tier": "tier_1",
+  "type": "atlassian_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an Atlassian API token.",
+  "regex": { "source": "\\bATATT3[A-Za-z0-9_\\-=]{186}\\b" },
+  "fixtures": {
+    "positive": [
+      "ATATT3aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeF"
+    ],
+    "negative": [
+      "ATATT3tooshort",
+      "ATATT2aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeF"
+    ]
+  }
+}

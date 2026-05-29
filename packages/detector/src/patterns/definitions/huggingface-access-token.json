@@ -1,0 +1,20 @@
+{
+  "id": "huggingface.access_token",
+  "displayName": "Hugging Face access token",
+  "tier": "tier_1",
+  "type": "huggingface_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Hugging Face access token.",
+  "regex": { "source": "\\bhf_[a-zA-Z]{34}\\b" },
+  "fixtures": {
+    "positive": [
+      "hf_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgH",
+      "HUGGINGFACE_TOKEN=hf_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgH"
+    ],
+    "negative": [
+      "hf_tooshort",
+      "hf_abcdefghijklmnopqrstuvwxyz01234567"
+    ]
+  }
+}

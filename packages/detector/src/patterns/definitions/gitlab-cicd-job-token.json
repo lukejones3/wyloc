@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.cicd_job_token",
+  "displayName": "GitLab CI/CD job token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab CI/CD job token.",
+  "regex": { "source": "\\bglcbt-[0-9a-zA-Z]{1,5}_[0-9a-zA-Z_\\-]{20}\\b" },
+  "fixtures": {
+    "positive": [
+      "glcbt-abc_aBcDeFgHiJkLmNoPqRsT",
+      "CI_JOB_TOKEN=glcbt-abc_aBcDeFgHiJkLmNoPqRsT"
+    ],
+    "negative": [
+      "glcbt-tooshort",
+      "gldt-aBcDeFgHiJkLmNoPqRsT"
+    ]
+  }
+}

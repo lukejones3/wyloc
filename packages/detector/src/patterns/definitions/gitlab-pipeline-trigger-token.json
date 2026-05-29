@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.pipeline_trigger_token",
+  "displayName": "GitLab pipeline trigger token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab pipeline trigger token.",
+  "regex": { "source": "\\bglptt-[0-9a-f]{40}\\b" },
+  "fixtures": {
+    "positive": [
+      "glptt-abcdef1234567890abcdef1234567890abcdef12",
+      "GITLAB_TRIGGER_TOKEN=glptt-aabbccdd11223344aabbccdd11223344aabbccdd"
+    ],
+    "negative": [
+      "glptt-tooshort",
+      "glpat-abcdefghijklmnopqrstu"
+    ]
+  }
+}

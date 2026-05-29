@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.runner_auth_token",
+  "displayName": "GitLab runner authentication token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab runner authentication token.",
+  "regex": { "source": "\\bglrt-[0-9a-zA-Z_\\-]{20}\\b" },
+  "fixtures": {
+    "positive": [
+      "glrt-aBcDeFgHiJkLmNoPqRsT",
+      "GITLAB_RUNNER_TOKEN=glrt-aBcDeFgHiJkLmNoPqRsT"
+    ],
+    "negative": [
+      "glrt-tooshort",
+      "gldt-aBcDeFgHiJkLmNoPqRsT"
+    ]
+  }
+}

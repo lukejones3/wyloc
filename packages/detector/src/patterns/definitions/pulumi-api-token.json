@@ -1,0 +1,20 @@
+{
+  "id": "pulumi.api_token",
+  "displayName": "Pulumi API token",
+  "tier": "tier_1",
+  "type": "pulumi_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Pulumi API token.",
+  "regex": { "source": "\\bpul-[a-f0-9]{40}\\b" },
+  "fixtures": {
+    "positive": [
+      "pul-abcdef1234567890abcdef1234567890abcdef12",
+      "PULUMI_ACCESS_TOKEN=pul-aabbccdd11223344aabbccdd11223344aabbccdd"
+    ],
+    "negative": [
+      "pul-tooshort",
+      "pull-abcdef0123456789abcdef0123456789abcdef12"
+    ]
+  }
+}

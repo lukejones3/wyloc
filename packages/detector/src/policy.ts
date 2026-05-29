@@ -61,21 +61,56 @@ export function decideForFinding(f: Finding): Action {
 
 /** Human-readable secret-type labels for the UI summary. */
 const TYPE_LABELS: Record<SecretType, string> = {
+  // Cloud platforms
   aws_access_key: "AWS access key",
   aws_secret_key: "AWS secret key",
+  aws_bedrock_key: "AWS Bedrock API key",
   gcp_api_key: "GCP API key",
   gcp_service_account: "GCP service account key",
   azure_token: "Azure token",
+  digitalocean_token: "DigitalOcean token",
+  heroku_key: "Heroku API key",
+  flyio_token: "Fly.io token",
+  cloudflare_key: "Cloudflare key",
+  doppler_token: "Doppler token",
+  databricks_token: "Databricks token",
+  vault_token: "Vault token",
+  pulumi_token: "Pulumi token",
+  hashicorp_token: "HashiCorp token",
+  dynatrace_token: "Dynatrace token",
+  // Source control / CI
   github_token: "GitHub token",
   gitlab_token: "GitLab token",
+  // Communication / collaboration
   slack_token: "Slack token",
+  atlassian_token: "Atlassian token",
+  linear_token: "Linear token",
+  notion_token: "Notion token",
+  // Payments
   stripe_key: "Stripe key",
+  square_token: "Square token",
+  // AI / ML
   openai_key: "OpenAI key",
   anthropic_key: "Anthropic key",
+  huggingface_token: "Hugging Face token",
+  // SaaS / developer tools
+  sendgrid_key: "SendGrid key",
+  shopify_token: "Shopify token",
+  npm_token: "npm token",
+  pypi_token: "PyPI token",
+  postman_token: "Postman token",
+  planetscale_token: "PlanetScale token",
+  new_relic_key: "New Relic key",
+  sentry_token: "Sentry token",
+  grafana_token: "Grafana token",
+  twilio_key: "Twilio key",
+  artifactory_key: "Artifactory key",
+  // Standard formats
   jwt: "JWT",
   oauth_bearer: "OAuth bearer token",
   private_key: "private key",
   database_url: "database URL",
+  // Generic / structural
   generic_api_key: "API key",
   high_entropy_string: "high-entropy string",
   env_assignment: "credential assignment",

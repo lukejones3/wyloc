@@ -1,0 +1,20 @@
+{
+  "id": "heroku.api_key",
+  "displayName": "Heroku API key",
+  "tier": "tier_1",
+  "type": "heroku_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Heroku API key.",
+  "regex": { "source": "\\bHRKU-AA[0-9a-zA-Z_\\-]{58}\\b" },
+  "fixtures": {
+    "positive": [
+      "HRKU-AAaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuV",
+      "HEROKU_API_KEY=HRKU-AAaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuV"
+    ],
+    "negative": [
+      "HRKU-AAtooShort",
+      "HRKU-ABaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuV"
+    ]
+  }
+}

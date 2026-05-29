@@ -1,0 +1,20 @@
+{
+  "id": "npm.access_token",
+  "displayName": "npm access token",
+  "tier": "tier_1",
+  "type": "npm_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an npm access token.",
+  "regex": { "source": "\\bnpm_[A-Za-z0-9]{36}\\b" },
+  "fixtures": {
+    "positive": [
+      "npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+      "NPM_TOKEN=npm_abcdefghijklmnopqrstuvwxyz0123456789"
+    ],
+    "negative": [
+      "npm_tooshort",
+      "the npm_ prefix is used for npm tokens but this is just documentation"
+    ]
+  }
+}

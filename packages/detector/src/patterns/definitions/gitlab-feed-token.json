@@ -1,0 +1,20 @@
+{
+  "id": "gitlab.feed_token",
+  "displayName": "GitLab feed token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab feed token.",
+  "regex": { "source": "\\bglft-[0-9a-zA-Z_\\-]{20}\\b" },
+  "fixtures": {
+    "positive": [
+      "glft-aBcDeFgHiJkLmNoPqRsT",
+      "GITLAB_FEED_TOKEN=glft-aBcDeFgHiJkLmNoPqRsT"
+    ],
+    "negative": [
+      "glft-short",
+      "gldt-aBcDeFgHiJkLmNoPqRsT"
+    ]
+  }
+}

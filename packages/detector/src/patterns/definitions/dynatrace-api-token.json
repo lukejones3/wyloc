@@ -1,0 +1,20 @@
+{
+  "id": "dynatrace.api_token",
+  "displayName": "Dynatrace API token",
+  "tier": "tier_1",
+  "type": "dynatrace_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Dynatrace API token.",
+  "regex": { "source": "\\bdt0c01\\.[A-Za-z0-9]{24}\\.[a-z0-9]{64}\\b" },
+  "fixtures": {
+    "positive": [
+      "dt0c01.aBcDeFgHiJkLmNoPqRsTuVwX.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01",
+      "DYNATRACE_TOKEN=dt0c01.aBcDeFgHiJkLmNoPqRsTuVwX.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01"
+    ],
+    "negative": [
+      "dt0c01.tooshort.abcdef",
+      "dt0c02.aBcDeFgHiJkLmNoPqRsTuVwX.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01"
+    ]
+  }
+}

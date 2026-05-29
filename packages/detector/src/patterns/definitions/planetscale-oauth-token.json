@@ -1,0 +1,20 @@
+{
+  "id": "planetscale.oauth_token",
+  "displayName": "PlanetScale OAuth token",
+  "tier": "tier_1",
+  "type": "planetscale_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a PlanetScale OAuth token.",
+  "regex": { "source": "\\bpscale_oauth_[A-Za-z0-9=\\.\\-_]{32,64}\\b" },
+  "fixtures": {
+    "positive": [
+      "pscale_oauth_abcdefghijklmnopqrstuvwxyz01234567",
+      "PS_OAUTH_TOKEN=pscale_oauth_aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567890"
+    ],
+    "negative": [
+      "pscale_oauth_short",
+      "pscale_tkn_abcdefghijklmnopqrstuvwxyz01234567"
+    ]
+  }
+}

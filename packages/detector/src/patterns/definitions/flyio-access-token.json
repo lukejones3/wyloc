@@ -1,0 +1,20 @@
+{
+  "id": "flyio.access_token",
+  "displayName": "Fly.io access token",
+  "tier": "tier_1",
+  "type": "flyio_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Fly.io access token.",
+  "regex": { "source": "\\b(?:fo1_[\\w\\-]{43}|fm1[ar]_[A-Za-z0-9+/]{100,}={0,3}|fm2_[A-Za-z0-9+/]{100,}={0,3})\\b" },
+  "fixtures": {
+    "positive": [
+      "fo1_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFg",
+      "FLY_API_TOKEN=fo1_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFg"
+    ],
+    "negative": [
+      "fo1_short",
+      "fm3_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+    ]
+  }
+}

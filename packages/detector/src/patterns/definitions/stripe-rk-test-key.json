@@ -1,0 +1,20 @@
+{
+  "id": "stripe.rk_test_key",
+  "displayName": "Stripe test restricted key",
+  "tier": "tier_1",
+  "type": "stripe_key",
+  "confidence": "medium",
+  "blockEligible": false,
+  "reason": "Looks like a test-mode Stripe restricted key.",
+  "regex": { "source": "\\brk_test_[A-Za-z0-9]{10,99}\\b" },
+  "fixtures": {
+    "positive": [
+      "rk_test_4eC39HqLyjWDarjtT1zdp7dcAbCdEfGh",
+      "STRIPE_RESTRICTED_KEY=rk_test_aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+    ],
+    "negative": [
+      "rk_test_short",
+      "rk_live_4eC39HqLyjWDarjtT1zdp7dcAbCdEfGh"
+    ]
+  }
+}

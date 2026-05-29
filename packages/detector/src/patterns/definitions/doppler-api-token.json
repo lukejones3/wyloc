@@ -1,0 +1,20 @@
+{
+  "id": "doppler.api_token",
+  "displayName": "Doppler API token",
+  "tier": "tier_1",
+  "type": "doppler_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Doppler API token.",
+  "regex": { "source": "\\bdp\\.pt\\.[A-Za-z0-9]{43}\\b" },
+  "fixtures": {
+    "positive": [
+      "dp.pt.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFg",
+      "DOPPLER_TOKEN=dp.pt.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFg"
+    ],
+    "negative": [
+      "dp.pt.tooshort",
+      "dp.tk.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFg"
+    ]
+  }
+}

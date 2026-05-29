@@ -1,0 +1,19 @@
+{
+  "id": "aws.bedrock_api_key",
+  "displayName": "AWS Amazon Bedrock API key",
+  "tier": "tier_1",
+  "type": "aws_bedrock_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an AWS Amazon Bedrock API key.",
+  "regex": { "source": "\\bABSK[A-Za-z0-9+/]{109,269}={0,2}\\b" },
+  "fixtures": {
+    "positive": [
+      "ABSKaBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD"
+    ],
+    "negative": [
+      "ABSKtooshort",
+      "ABSK123456789"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "vault.service_token",
+  "displayName": "HashiCorp Vault service token",
+  "tier": "tier_1",
+  "type": "vault_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a HashiCorp Vault service token.",
+  "regex": { "source": "\\bhvs\\.[\\w\\-]{90,120}\\b" },
+  "fixtures": {
+    "positive": [
+      "hvs.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRs",
+      "VAULT_TOKEN=hvs.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRs"
+    ],
+    "negative": [
+      "hvs.tooshort",
+      "hvb.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRs"
+    ]
+  }
+}
