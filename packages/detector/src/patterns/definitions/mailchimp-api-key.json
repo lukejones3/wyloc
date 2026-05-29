@@ -1,0 +1,24 @@
+{
+  "id": "mailchimp.api_key",
+  "displayName": "Mailchimp API key",
+  "tier": "tier_3",
+  "type": "mailchimp_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Mailchimp API key (hex key with a -usNN datacenter suffix and Mailchimp context nearby).",
+  "regex": { "source": "\\b[a-f0-9]{32}-us\\d\\d\\b" },
+  "requiredContext": ["mailchimp"],
+  "entropyThreshold": 3.0,
+  "fixtures": {
+    "positive": [
+      "MAILCHIMP_API_KEY=abcdef0123456789abcdef0123456789-us21",
+      "mailchimp key: fedcba9876543210fedcba9876543210-us19"
+    ],
+    "negative": [
+      "abcdef0123456789abcdef0123456789-us21",
+      "the mailchimp newsletter went out to all subscribers today",
+      "mailchimp checksum abcdef0123456789abcdef0123456789 verified",
+      "user id 550e8400-e29b-41d4-a716-446655440000 in mailchimp audience"
+    ]
+  }
+}

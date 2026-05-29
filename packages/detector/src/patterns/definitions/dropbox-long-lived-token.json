@@ -1,0 +1,23 @@
+{
+  "id": "dropbox.long_lived_token",
+  "displayName": "Dropbox long-lived API token",
+  "tier": "tier_3",
+  "type": "dropbox_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Dropbox long-lived API token (AAAAAAAAAA marker with Dropbox context nearby).",
+  "regex": { "source": "\\b[a-z0-9]{11}AAAAAAAAAA[a-z0-9\\-_=]{43}" },
+  "requiredContext": ["dropbox"],
+  "entropyThreshold": 3.0,
+  "fixtures": {
+    "positive": [
+      "DROPBOX_TOKEN=abcdefghijkAAAAAAAAAAabcdefghijklmnopqrstuvwxyz0123456789abcdefg",
+      "dropbox access token abcdefghijkAAAAAAAAAAabcdefghijklmnopqrstuvwxyz0123456789abcdefg"
+    ],
+    "negative": [
+      "abcdefghijkAAAAAAAAAAabcdefghijklmnopqrstuvwxyz0123456789abcdefg",
+      "we migrated our files to dropbox last quarter without issues",
+      "dropbox build abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmno without marker"
+    ]
+  }
+}

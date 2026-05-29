@@ -1,0 +1,21 @@
+{
+  "id": "cloudflare.origin_ca_key",
+  "displayName": "Cloudflare origin CA key",
+  "tier": "tier_1",
+  "type": "cloudflare_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Cloudflare origin CA key.",
+  "regex": { "source": "\\bv1\\.0-[a-f0-9]{24}-[a-f0-9]{146}\\b" },
+  "fixtures": {
+    "positive": [
+      "v1.0-abcdef0123456789abcdef01-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab",
+      "CF_ORIGIN_CA_KEY=v1.0-fedcba9876543210fedcba98-fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fe"
+    ],
+    "negative": [
+      "v1.0-tooshort-abcdef",
+      "we upgraded to v1.0 of the public API released last week",
+      "v1.0-abcdef0123456789abcdef01-deadbeef"
+    ]
+  }
+}

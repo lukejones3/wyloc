@@ -1,0 +1,24 @@
+{
+  "id": "okta.access_token",
+  "displayName": "Okta access token",
+  "tier": "tier_3",
+  "type": "okta_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an Okta access token (00-prefixed high-entropy token with Okta context nearby).",
+  "regex": { "source": "\\b00[\\w=\\-]{40}" },
+  "requiredContext": ["okta"],
+  "entropyThreshold": 4.0,
+  "fixtures": {
+    "positive": [
+      "OKTA_API_TOKEN=00aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD",
+      "okta token 00ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXw"
+    ],
+    "negative": [
+      "00aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD",
+      "the okta dashboard shows all active user sessions clearly",
+      "okta config 00000000000000000000000000000000000000000 zeros",
+      "okta id 550e8400-e29b-41d4-a716-446655440000 reference"
+    ]
+  }
+}

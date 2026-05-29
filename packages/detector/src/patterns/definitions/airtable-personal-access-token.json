@@ -1,0 +1,21 @@
+{
+  "id": "airtable.personal_access_token",
+  "displayName": "Airtable personal access token",
+  "tier": "tier_1",
+  "type": "airtable_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an Airtable personal access token.",
+  "regex": { "source": "\\bpat[A-Za-z0-9]{14}\\.[a-f0-9]{64}\\b" },
+  "fixtures": {
+    "positive": [
+      "pataBcDeFgHiJkLmN.abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "AIRTABLE_PAT=pat0123456789ABCD.fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    ],
+    "negative": [
+      "patABCDEFGHIJKLMN.tooshorthex",
+      "the patch was applied to the main branch yesterday afternoon",
+      "pat123.abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    ]
+  }
+}

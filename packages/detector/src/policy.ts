@@ -86,6 +86,7 @@ const TYPE_LABELS: Record<SecretType, string> = {
   atlassian_token: "Atlassian token",
   linear_token: "Linear token",
   notion_token: "Notion token",
+  okta_token: "Okta token",
   // Payments
   stripe_key: "Stripe key",
   square_token: "Square token",
@@ -93,6 +94,7 @@ const TYPE_LABELS: Record<SecretType, string> = {
   openai_key: "OpenAI key",
   anthropic_key: "Anthropic key",
   huggingface_token: "Hugging Face token",
+  cohere_token: "Cohere token",
   // SaaS / developer tools
   sendgrid_key: "SendGrid key",
   shopify_token: "Shopify token",
@@ -105,6 +107,9 @@ const TYPE_LABELS: Record<SecretType, string> = {
   grafana_token: "Grafana token",
   twilio_key: "Twilio key",
   artifactory_key: "Artifactory key",
+  mailchimp_token: "Mailchimp token",
+  dropbox_token: "Dropbox token",
+  airtable_token: "Airtable token",
   // Standard formats
   jwt: "JWT",
   oauth_bearer: "OAuth bearer token",

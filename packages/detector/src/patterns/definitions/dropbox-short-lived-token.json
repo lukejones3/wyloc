@@ -1,0 +1,23 @@
+{
+  "id": "dropbox.short_lived_token",
+  "displayName": "Dropbox short-lived API token",
+  "tier": "tier_3",
+  "type": "dropbox_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Dropbox short-lived API token (sl. prefix with Dropbox context nearby).",
+  "regex": { "source": "\\bsl\\.[a-z0-9\\-=_]{135}" },
+  "requiredContext": ["dropbox"],
+  "entropyThreshold": 3.0,
+  "fixtures": {
+    "positive": [
+      "DROPBOX_TOKEN=sl.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0",
+      "dropbox sl.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0 token"
+    ],
+    "negative": [
+      "sl.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0",
+      "the dropbox sync slows down on large folders sometimes",
+      "dropbox sl.tooshort token here"
+    ]
+  }
+}

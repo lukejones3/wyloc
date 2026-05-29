@@ -1,0 +1,24 @@
+{
+  "id": "cohere.api_token",
+  "displayName": "Cohere API token",
+  "tier": "tier_3",
+  "type": "cohere_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Cohere API token (high-entropy token in a CO_API_KEY / COHERE_API_KEY assignment).",
+  "regex": { "source": "\\b[A-Za-z0-9]{40}\\b" },
+  "requiredContext": ["co_api_key", "cohere_api_key"],
+  "entropyThreshold": 4.0,
+  "fixtures": {
+    "positive": [
+      "COHERE_API_KEY=aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD",
+      "co_api_key = \"ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210ZyXw\""
+    ],
+    "negative": [
+      "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD",
+      "these findings cohere into aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcD nicely",
+      "the argument is coherent and the sections cohere well together",
+      "co_api_key sha abcdef0123456789abcdef0123456789abcdef01 logged"
+    ]
+  }
+}

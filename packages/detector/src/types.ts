@@ -47,6 +47,7 @@ export type SecretType =
   | "atlassian_token"
   | "linear_token"
   | "notion_token"
+  | "okta_token"
   // Payments
   | "stripe_key"
   | "square_token"
@@ -54,6 +55,7 @@ export type SecretType =
   | "openai_key"
   | "anthropic_key"
   | "huggingface_token"
+  | "cohere_token"
   // SaaS / developer tools
   | "sendgrid_key"
   | "shopify_token"
@@ -66,6 +68,9 @@ export type SecretType =
   | "grafana_token"
   | "twilio_key"
   | "artifactory_key"
+  | "mailchimp_token"
+  | "dropbox_token"
+  | "airtable_token"
   // Standard formats
   | "jwt"
   | "oauth_bearer"
