@@ -37,7 +37,13 @@ export { redact, maskValue } from "./redact.js";
 export { buildSwap, rehydrate } from "./swap.js";
 export type { SwapMapping, SwapResult } from "./swap.js";
 export { toIncidentMetadata, buildIncidents } from "./incident.js";
-export { SECRET_PATTERNS } from "./patterns/known.js";
+// The compiled pattern table is the runtime source of truth. SECRET_PATTERNS
+// is kept as a backwards-compatible alias for existing importers.
+export {
+  COMPILED_PATTERNS,
+  COMPILED_PATTERNS as SECRET_PATTERNS,
+} from "./patterns/compiled.generated.js";
+export type { CompiledPattern, PatternDefinition, PatternTier } from "./patterns/schema.js";
 
 /**
  * Scan a block of text for secrets and compute the policy decision.

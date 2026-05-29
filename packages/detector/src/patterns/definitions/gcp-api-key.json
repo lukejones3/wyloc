@@ -1,0 +1,19 @@
+{
+  "id": "gcp.api_key",
+  "displayName": "Google Cloud API key",
+  "tier": "tier_1",
+  "type": "gcp_api_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Google Cloud API key.",
+  "regex": { "source": "\\bAIza[0-9A-Za-z\\-_]{35}\\b" },
+  "fixtures": {
+    "positive": [
+      "AIzaSyD3kL9mN2pQ7rS4tU6vW8xY1zA5bC0dEfG"
+    ],
+    "negative": [
+      "AIzaShort",
+      "the aiza prefix needs 35 more chars"
+    ]
+  }
+}

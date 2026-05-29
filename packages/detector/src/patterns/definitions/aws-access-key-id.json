@@ -1,0 +1,20 @@
+{
+  "id": "aws.access_key_id",
+  "displayName": "AWS access key ID",
+  "tier": "tier_1",
+  "type": "aws_access_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an AWS access key ID.",
+  "regex": { "source": "\\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\\b" },
+  "fixtures": {
+    "positive": [
+      "AKIA5XQ2WJ8NPLR3MKVT",
+      "ASIA2RZ4QF7KJ9XW1MTL"
+    ],
+    "negative": [
+      "AKIAIOSF",
+      "the akia prefix in lowercase akia5xq2wj8nplr3mkvt"
+    ]
+  }
+}

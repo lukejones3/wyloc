@@ -1,0 +1,19 @@
+{
+  "id": "anthropic.api_key",
+  "displayName": "Anthropic API key",
+  "tier": "tier_1",
+  "type": "anthropic_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an Anthropic API key.",
+  "regex": { "source": "\\bsk-ant-[A-Za-z0-9\\-_]{20,}\\b" },
+  "fixtures": {
+    "positive": [
+      "sk-ant-api03-aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ5"
+    ],
+    "negative": [
+      "sk-ant-short",
+      "sk-proj-aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ5a"
+    ]
+  }
+}

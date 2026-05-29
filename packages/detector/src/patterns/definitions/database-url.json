@@ -1,0 +1,23 @@
+{
+  "id": "database.url_with_credentials",
+  "displayName": "Database URL with credentials",
+  "tier": "tier_2",
+  "type": "database_url",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a database connection string with embedded credentials.",
+  "regex": {
+    "source": "\\b(?:postgres(?:ql)?|mysql|mongodb(?:\\+srv)?|redis|rediss|amqp|mssql)://[^\\s:@/]+:[^\\s:@/]+@[^\\s/]+",
+    "flags": "i"
+  },
+  "fixtures": {
+    "positive": [
+      "postgresql://admin:Sup3rS3cr3tP4ss@db.prod.internal:5432/main",
+      "mongodb+srv://svc_user:xK9pL2mQ7n@cluster0.ab1cd.mongodb.net/app"
+    ],
+    "negative": [
+      "postgresql://localhost:5432/myapp_dev",
+      "https://example.com/api/v1/users"
+    ]
+  }
+}

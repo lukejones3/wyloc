@@ -1,0 +1,21 @@
+{
+  "id": "private_key.pem",
+  "displayName": "PEM private key",
+  "tier": "tier_2",
+  "type": "private_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a PEM-encoded private key.",
+  "regex": { "source": "-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----" },
+  "fixtures": {
+    "positive": [
+      "-----BEGIN RSA PRIVATE KEY-----",
+      "-----BEGIN PRIVATE KEY-----",
+      "-----BEGIN OPENSSH PRIVATE KEY-----"
+    ],
+    "negative": [
+      "-----BEGIN PUBLIC KEY-----",
+      "-----BEGIN CERTIFICATE-----"
+    ]
+  }
+}

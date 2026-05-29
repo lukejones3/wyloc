@@ -112,11 +112,29 @@ src/
   redact.ts           redaction + masking helpers
   incident.ts         metadata-only incident construction
   cli.ts              CLI shell (the only Node-coupled file)
-  patterns/known.ts   Layer 1 vendor patterns
+  patterns/
+    definitions/*.json      Layer 1 patterns, declared as JSON (source of truth)
+    schema.ts               authoring + runtime pattern types (3 tiers)
+    validators.ts           tier_2 structural-validation hook registry
+    compiled.generated.ts   build-time-compiled pattern table (scanner consumes)
   layers/entropy.ts   Layer 2 entropy + token heuristics
   layers/structural.ts Layer 3 assignment detection
   layers/context.ts   Layers 4-5 context gating + allowlist
+scripts/
+  compile-patterns.ts compiles definitions/*.json -> compiled.generated.ts
+                      (validates + fails the build on malformed/unsafe defs)
 test/
-  run.ts              dependency-free test runner
+  run.ts              dependency-free test runner (also validates each
+                      definition's inline fixtures)
   fixtures/           positive (must fire) + negative (must not)
 ```
+
+## Adding a pattern
+
+Drop a JSON file in `src/patterns/definitions/`, run `npm run compile:patterns`,
+and commit it — no core code changes. Each definition declares a `tier`
+(tier_1 prefixed / tier_2 structural / tier_3 generic high-entropy) and carries
+its own positive + negative fixtures. tier_3 patterns MUST declare
+`requiredContext` + `entropyThreshold` (enforced by both the type system and
+the compiler). `npm test` runs `--check` to ensure the generated table is in
+sync and validates every definition's fixtures.

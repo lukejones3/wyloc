@@ -1,0 +1,19 @@
+{
+  "id": "jwt.token",
+  "displayName": "JSON Web Token (JWT)",
+  "tier": "tier_2",
+  "type": "jwt",
+  "confidence": "medium",
+  "blockEligible": false,
+  "reason": "Looks like a JSON Web Token (JWT).",
+  "regex": { "source": "\\beyJ[A-Za-z0-9\\-_]+\\.eyJ[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+\\b" },
+  "fixtures": {
+    "positive": [
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHDpoyU1tLFmKgKM5OdHk7vRkPak"
+    ],
+    "negative": [
+      "eyJonly.onesegment",
+      "the jwt format has three dot-separated segments"
+    ]
+  }
+}

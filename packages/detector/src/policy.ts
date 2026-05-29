@@ -17,22 +17,12 @@ import type {
   PolicyDecision,
   SecretType,
 } from "./types.js";
-import { SECRET_PATTERNS } from "./patterns/known.js";
-
-/**
- * Block-eligible rule IDs from context-gated detectors that don't live in
- * SECRET_PATTERNS (e.g. the AWS secret-key detector in the scanner). Listed
- * here because block-eligibility is a policy decision, not a pattern trait.
- */
-const EXTRA_BLOCK_ELIGIBLE_RULES: readonly string[] = [
-  "aws.secret_access_key_contextual",
-];
+import { COMPILED_PATTERNS } from "./patterns/compiled.generated.js";
 
 /** Rule IDs that are precise enough to BLOCK on. Built from the pattern set. */
-const BLOCK_ELIGIBLE_RULES: ReadonlySet<string> = new Set([
-  ...SECRET_PATTERNS.filter((p) => p.blockEligible).map((p) => p.ruleId),
-  ...EXTRA_BLOCK_ELIGIBLE_RULES,
-]);
+const BLOCK_ELIGIBLE_RULES: ReadonlySet<string> = new Set(
+  COMPILED_PATTERNS.filter((p) => p.blockEligible).map((p) => p.id),
+);
 
 /** Severity ordering so we can take the strongest action across findings. */
 const ACTION_RANK: Record<Action, number> = {

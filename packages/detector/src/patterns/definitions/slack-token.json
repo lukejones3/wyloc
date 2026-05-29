@@ -1,0 +1,20 @@
+{
+  "id": "slack.token",
+  "displayName": "Slack token",
+  "tier": "tier_1",
+  "type": "slack_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a Slack token.",
+  "regex": { "source": "\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b" },
+  "fixtures": {
+    "positive": [
+      "xoxb-1234567890-0987654321098-AbCdEfGhIjKlMnOpQrStUvWx",
+      "xoxp-1111111111-2222222222"
+    ],
+    "negative": [
+      "xoxb-short",
+      "the xox prefix is used by slack"
+    ]
+  }
+}

@@ -15,7 +15,8 @@
  */
 
 import type { DetectorConfig, Finding } from "./types.js";
-import { SECRET_PATTERNS } from "./patterns/known.js";
+import type { CompiledPattern } from "./patterns/schema.js";
+import { COMPILED_PATTERNS } from "./patterns/compiled.generated.js";
 import {
   shannonEntropy,
   extractTokens,
@@ -43,71 +44,86 @@ function specificity(f: Finding): number {
   return layerRank[f.layer] * 10 + confRank[f.confidence];
 }
 
-// --- Layer 1 -----------------------------------------------------------
-function runKnownPatterns(text: string, cfg: DetectorConfig): Finding[] {
-  const out: Finding[] = [];
-  for (const pat of SECRET_PATTERNS) {
-    pat.regex.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = pat.regex.exec(text)) !== null) {
-      // When the pattern designates a capture group, the finding's span
-      // and value are that group — not the surrounding match context.
-      let value: string;
-      let start: number;
-      if (pat.captureGroup !== undefined && m[pat.captureGroup] !== undefined) {
-        value = m[pat.captureGroup] as string;
-        start = m.index + m[0].indexOf(value);
-      } else {
-        value = m[0];
-        start = m.index;
-      }
-      const end = start + value.length;
-      if (isAllowlisted(text, start, end, value, cfg.allowlist)) continue;
+// --- Layer 1: compiled vendor patterns ---------------------------------
+//
+// All patterns come from the build-time-compiled table (COMPILED_PATTERNS),
+// generated from src/patterns/definitions/*.json. The runtime never parses
+// those JSON files — it consumes the pre-built RegExp table here. Each
+// pattern is evaluated by its declared tier:
+//
+//   tier_1 / tier_2  regex match -> finding. tier_2 may run an optional
+//                    structural validation hook. Nearby context can lift a
+//                    medium match to high (same as the old known-pattern
+//                    behaviour).
+//   tier_3           generic high-entropy blob with no fixed prefix. Fires
+//                    ONLY when it clears the entropy floor, looks secret-like
+//                    (mixed charset, not a hash/UUID), and a hard context
+//                    gate opens (a requiredContext keyword OR the optional
+//                    contextRegex within the window). This is the machinery
+//                    that keeps a prefix-less 40-char blob from wrecking the
+//                    false-positive rate — see the AWS secret access key.
 
-      let confidence = pat.baseConfidence;
-      // Context can lift a medium vendor match to high.
-      if (
-        confidence !== "high" &&
-        hasNearbyContext(text, start, end, cfg.contextWindow)
-      ) {
-        confidence = raiseConfidence(confidence);
-      }
-      out.push({
-        layer: "known_pattern",
-        type: pat.type,
-        confidence,
-        start,
-        end,
-        value,
-        environment: inferEnvironment(text, start, end, cfg.contextWindow),
-        reason: pat.reason,
-        ruleId: pat.ruleId,
-      });
-      // Guard against zero-width matches.
-      if (m.index === pat.regex.lastIndex) pat.regex.lastIndex++;
-    }
+/**
+ * Resolve a match's reported value + start, honouring an optional capture
+ * group (used when the regex must match surrounding context but only the
+ * group is the secret, e.g. `aws_secret_access_key=<value>`).
+ */
+function matchSpan(
+  pat: CompiledPattern,
+  m: RegExpExecArray,
+): { value: string; start: number } {
+  const cg = pat.captureGroup;
+  if (cg !== undefined && m[cg] !== undefined) {
+    const value = m[cg] as string;
+    return { value, start: m.index + m[0].indexOf(value) };
   }
-  return out;
+  return { value: m[0], start: m.index };
 }
 
-// --- Layer 1b: AWS secret access key (context-gated) -------------------
-//
-// An AWS secret access key is 40 base64 chars with NO fixed prefix, so in
-// isolation it is indistinguishable from a hash, a random token, or
-// base64 data — flagging every 40-char blob would wreck the false-positive
-// rate. This fires ONLY when AWS-specific context sits within the window
-// (an AKIA/ASIA access key id — secret keys are almost always pasted with
-// their id — or the word "aws"/"amazon", or a "secret access key" phrase)
-// AND the candidate actually looks secret-like (mixed charset, real
-// entropy, not a hex digest). The precise `aws_secret_access_key=<value>`
-// assignment stays in known.ts; this catches the looser real-world paste
-// that the prefix pattern misses.
-const AWS_SECRET_KEY_RE =
-  /(?<![A-Za-z0-9/+])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])/g;
+/** tier_1 / tier_2 evaluation. */
+function runPrefixedOrStructural(
+  pat: CompiledPattern,
+  text: string,
+  cfg: DetectorConfig,
+  out: Finding[],
+): void {
+  pat.regex.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = pat.regex.exec(text)) !== null) {
+    const { value, start } = matchSpan(pat, m);
+    const end = start + value.length;
+    // Guard against zero-width matches.
+    if (m.index === pat.regex.lastIndex) pat.regex.lastIndex++;
 
-const AWS_ACCESS_KEY_ID_RE = /\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b/;
+    // tier_2: optional deeper structural validation hook.
+    if (pat.structuralValidator && !pat.structuralValidator(value)) continue;
+    if (isAllowlisted(text, start, end, value, cfg.allowlist)) continue;
 
-function hasAwsContext(
+    let confidence = pat.confidence;
+    // Context can lift a medium vendor match to high.
+    if (
+      confidence !== "high" &&
+      hasNearbyContext(text, start, end, cfg.contextWindow)
+    ) {
+      confidence = raiseConfidence(confidence);
+    }
+    out.push({
+      layer: "known_pattern",
+      type: pat.type,
+      confidence,
+      start,
+      end,
+      value,
+      environment: inferEnvironment(text, start, end, cfg.contextWindow),
+      reason: pat.reason,
+      ruleId: pat.id,
+    });
+  }
+}
+
+/** The hard tier_3 gate: a requiredContext keyword OR the contextRegex. */
+function tier3GateOpen(
+  pat: CompiledPattern,
   text: string,
   start: number,
   end: number,
@@ -116,50 +132,63 @@ function hasAwsContext(
   const from = Math.max(0, start - radius);
   const to = Math.min(text.length, end + radius);
   const w = text.slice(from, to);
-  // An access key id beside the candidate is the strongest signal.
-  if (AWS_ACCESS_KEY_ID_RE.test(w)) return true;
+  // An optional structural signal (e.g. an AKIA access key id beside the
+  // candidate) is matched against the original-case window.
+  if (pat.contextRegex) {
+    pat.contextRegex.lastIndex = 0;
+    if (pat.contextRegex.test(w)) return true;
+  }
   const lw = w.toLowerCase();
-  return (
-    lw.includes("aws") ||
-    lw.includes("amazon") ||
-    lw.includes("secret access key") ||
-    lw.includes("secret_access_key") ||
-    lw.includes("secretaccesskey")
-  );
+  return (pat.requiredContext ?? []).some((kw) => lw.includes(kw));
 }
 
-function runAwsSecretKey(text: string, cfg: DetectorConfig): Finding[] {
-  const out: Finding[] = [];
-  AWS_SECRET_KEY_RE.lastIndex = 0;
+/** tier_3 evaluation: generic high-entropy blob, context-gated. */
+function runGenericHighEntropy(
+  pat: CompiledPattern,
+  text: string,
+  cfg: DetectorConfig,
+  out: Finding[],
+): void {
+  const threshold = pat.entropyThreshold ?? Infinity;
+  pat.regex.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = AWS_SECRET_KEY_RE.exec(text)) !== null) {
-    const value = m[0];
-    const start = m.index;
+  while ((m = pat.regex.exec(text)) !== null) {
+    const { value, start } = matchSpan(pat, m);
     const end = start + value.length;
-    // Guard against zero-width matches (defensive — this pattern can't).
-    if (m.index === AWS_SECRET_KEY_RE.lastIndex) AWS_SECRET_KEY_RE.lastIndex++;
+    // Guard against zero-width matches.
+    if (m.index === pat.regex.lastIndex) pat.regex.lastIndex++;
 
     // Reject hashes/UUIDs and single-character-class blobs, and require the
     // entropy of a real key. Mirrors the entropy layer's own guards.
     if (looksLikeHashOrUuid(value)) continue;
     if (!hasSecretLikeCharMix(value)) continue;
-    if (shannonEntropy(value) < 3.5) continue;
-    // The gate: only emit when AWS context is nearby.
-    if (!hasAwsContext(text, start, end, cfg.contextWindow)) continue;
+    if (shannonEntropy(value) < threshold) continue;
+    // The hard gate: only emit when required context is nearby.
+    if (!tier3GateOpen(pat, text, start, end, cfg.contextWindow)) continue;
     if (isAllowlisted(text, start, end, value, cfg.allowlist)) continue;
 
     out.push({
       layer: "known_pattern",
-      type: "aws_secret_key",
-      confidence: "high",
+      type: pat.type,
+      confidence: pat.confidence,
       start,
       end,
       value,
       environment: inferEnvironment(text, start, end, cfg.contextWindow),
-      reason:
-        "Looks like an AWS secret access key (40-char key with AWS context nearby).",
-      ruleId: "aws.secret_access_key_contextual",
+      reason: pat.reason,
+      ruleId: pat.id,
     });
+  }
+}
+
+function runPatterns(text: string, cfg: DetectorConfig): Finding[] {
+  const out: Finding[] = [];
+  for (const pat of COMPILED_PATTERNS) {
+    if (pat.tier === "tier_3") {
+      runGenericHighEntropy(pat, text, cfg, out);
+    } else {
+      runPrefixedOrStructural(pat, text, cfg, out);
+    }
   }
   return out;
 }
@@ -276,8 +305,7 @@ function dedupe(findings: Finding[]): Finding[] {
 export function detect(text: string, cfg: DetectorConfig): Finding[] {
   if (text.length === 0) return [];
   const raw = [
-    ...runKnownPatterns(text, cfg),
-    ...runAwsSecretKey(text, cfg),
+    ...runPatterns(text, cfg),
     ...runEntropy(text, cfg),
     ...runStructural(text, cfg),
   ].filter((f) => !cfg.suppressedRuleIds.includes(f.ruleId));

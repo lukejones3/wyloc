@@ -1,0 +1,19 @@
+{
+  "id": "azure.storage_key",
+  "displayName": "Azure storage account key",
+  "tier": "tier_1",
+  "type": "azure_token",
+  "confidence": "medium",
+  "blockEligible": true,
+  "reason": "Looks like an Azure storage account key.",
+  "regex": { "source": "\\bAccountKey=[A-Za-z0-9/+]{86}==" },
+  "fixtures": {
+    "positive": [
+      "AccountKey=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwx=="
+    ],
+    "negative": [
+      "AccountKey=tooshort==",
+      "set the AccountName=mystorageaccount value"
+    ]
+  }
+}

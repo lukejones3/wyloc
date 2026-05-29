@@ -1,0 +1,16 @@
+{
+  "id": "bad.empty_required_context",
+  "displayName": "Bad tier_3 — empty requiredContext",
+  "tier": "tier_3",
+  "type": "high_entropy_string",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "This definition is intentionally invalid: a tier_3 pattern with an empty requiredContext.",
+  "regex": { "source": "[A-Za-z0-9/+]{40}" },
+  "requiredContext": [],
+  "entropyThreshold": 3.5,
+  "fixtures": {
+    "positive": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+    "negative": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "oauth.bearer",
+  "displayName": "OAuth bearer token",
+  "tier": "tier_1",
+  "type": "oauth_bearer",
+  "confidence": "medium",
+  "blockEligible": false,
+  "reason": "Looks like an OAuth bearer token.",
+  "regex": { "source": "\\b[Bb]earer\\s+[A-Za-z0-9\\-._~+/]{20,}=*" },
+  "fixtures": {
+    "positive": [
+      "Bearer aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ5a",
+      "bearer abcdefghijklmnopqrstuvwxyz123456=="
+    ],
+    "negative": [
+      "Bearer short",
+      "the bearer of this message"
+    ]
+  }
+}

@@ -8,6 +8,11 @@
  * fixture moved when you change a pattern or threshold.
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { scan, redact, maskValue, scanToIncidents, buildSwap, rehydrate } from "../src/index.js";
 import { positiveFixtures } from "./fixtures/positive.js";
 import { negativeFixtures } from "./fixtures/negative.js";
@@ -287,6 +292,116 @@ console.log("── Dummy-swap engine ──────────────
       "a mock equalled its real value",
     );
   }
+}
+
+// --- Per-definition fixtures: every pattern validates its own fixtures --
+//
+// Fixtures travel with each JSON definition. Here we iterate every
+// definition and assert, through the real scan pipeline, that each positive
+// fixture fires THAT pattern (by ruleId) and each negative fixture does not.
+// Because the compiler already fails the build on a definition with no
+// positive fixtures, adding a pattern forces adding its tests.
+console.log("── Per-definition fixtures (each pattern tests itself) ────");
+{
+  const defsDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "src",
+    "patterns",
+    "definitions",
+  );
+  const files = readdirSync(defsDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort();
+
+  check("definitions directory is non-empty", files.length > 0);
+
+  for (const file of files) {
+    const def = JSON.parse(readFileSync(join(defsDir, file), "utf8")) as {
+      id: string;
+      fixtures?: { positive?: string[]; negative?: string[] };
+    };
+    const positive = def.fixtures?.positive ?? [];
+    const negative = def.fixtures?.negative ?? [];
+
+    check(
+      `[def] ${def.id}: has positive fixtures`,
+      positive.length > 0,
+      positive.length === 0 ? "definition carries no positive fixtures" : "",
+    );
+
+    for (const text of positive) {
+      const { findings } = scan(text);
+      check(
+        `[def] ${def.id}: matches +${JSON.stringify(text.slice(0, 28))}`,
+        findings.some((f) => f.ruleId === def.id),
+        `fired [${findings.map((f) => f.ruleId).join(", ") || "none"}]`,
+      );
+    }
+    for (const text of negative) {
+      const { findings } = scan(text);
+      check(
+        `[def] ${def.id}: rejects -${JSON.stringify(text.slice(0, 28))}`,
+        !findings.some((f) => f.ruleId === def.id),
+        "pattern fired on a negative fixture",
+      );
+    }
+  }
+}
+
+// --- Build-time tier_3 gate: the compiler MUST reject unsafe definitions --
+//
+// The schema's types already forbid a tier_3 pattern without requiredContext,
+// but JSON authoring is not type-checked — the compiler is the real gate. We
+// drive the compiler against intentionally-bad fixture definitions and assert
+// it fails the build (non-zero exit). If someone later weakens that check,
+// these tests fail. A passing control proves the harness distinguishes
+// success from failure (i.e. it is not just always-erroring).
+console.log("── Build-time tier_3 gate (compiler rejects unsafe defs) ──");
+{
+  const testDir = dirname(fileURLToPath(import.meta.url));
+  const pkgRoot = join(testDir, "..");
+  const compiler = join(pkgRoot, "scripts", "compile-patterns.ts");
+  const badRoot = join(testDir, "fixtures", "bad-definitions");
+
+  const runCompiler = (args: string[]) =>
+    spawnSync(process.execPath, ["--import", "tsx", compiler, ...args], {
+      cwd: pkgRoot,
+      encoding: "utf8",
+    });
+
+  const badCases = [
+    { name: "no requiredContext field", dir: "missing-required-context" },
+    { name: "empty requiredContext array", dir: "empty-required-context" },
+  ];
+  for (const c of badCases) {
+    const r = runCompiler(["--dir", join(badRoot, c.dir)]);
+    const output = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    check(
+      `[build] rejects tier_3 with ${c.name} (non-zero exit)`,
+      r.status !== 0,
+      `expected non-zero exit, got ${r.status}`,
+    );
+    check(
+      `[build] error names the requiredContext gate (${c.name})`,
+      /requiredContext/.test(output),
+      `output: ${output.trim().slice(0, 140) || "(empty)"}`,
+    );
+  }
+
+  // Positive control: the real, valid definitions compile cleanly.
+  const ctrlOut = join(tmpdir(), `wyloc-compile-control-${Date.now()}.ts`);
+  const good = runCompiler([
+    "--dir",
+    join(pkgRoot, "src", "patterns", "definitions"),
+    "--out",
+    ctrlOut,
+  ]);
+  check(
+    "[build] control: valid definitions compile (exit 0)",
+    good.status === 0,
+    `expected exit 0, got ${good.status}: ${(good.stderr ?? "").trim().slice(0, 140)}`,
+  );
 }
 
 

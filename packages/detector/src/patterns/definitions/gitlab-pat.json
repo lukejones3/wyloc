@@ -1,0 +1,19 @@
+{
+  "id": "gitlab.pat",
+  "displayName": "GitLab personal access token",
+  "tier": "tier_1",
+  "type": "gitlab_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitLab personal access token.",
+  "regex": { "source": "\\bglpat-[A-Za-z0-9\\-_]{20,}\\b" },
+  "fixtures": {
+    "positive": [
+      "glpat-aB3cD4eF5gH6iJ7kL8mN"
+    ],
+    "negative": [
+      "glpat-short",
+      "the glpat- prefix marks gitlab tokens"
+    ]
+  }
+}

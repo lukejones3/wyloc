@@ -18,9 +18,10 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.cli.json",
-    "build:lib": "tsc -p tsconfig.json",
-    "test": "tsx test/run.ts",
+    "compile:patterns": "tsx scripts/compile-patterns.ts",
+    "build": "npm run compile:patterns && tsc -p tsconfig.cli.json",
+    "build:lib": "npm run compile:patterns && tsc -p tsconfig.json",
+    "test": "tsx scripts/compile-patterns.ts --check && tsx test/run.ts",
     "test:watch": "tsx --watch test/run.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "scan": "tsx src/cli.ts"

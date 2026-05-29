@@ -1,0 +1,24 @@
+{
+  "id": "github.token",
+  "displayName": "GitHub token",
+  "tier": "tier_1",
+  "type": "github_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitHub token.",
+  "regex": {
+    "source": "\\bgh[pousr]_[A-Za-z0-9]{36,255}\\b"
+  },
+  "fixtures": {
+    "positive": [
+      "ghp_aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4",
+      "gho_aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4",
+      "ghs_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab"
+    ],
+    "negative": [
+      "ghp_tooshort",
+      "the github workflow runs on push",
+      "ghx_aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4"
+    ]
+  }
+}

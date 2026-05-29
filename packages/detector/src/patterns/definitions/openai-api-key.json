@@ -1,0 +1,20 @@
+{
+  "id": "openai.api_key",
+  "displayName": "OpenAI API key",
+  "tier": "tier_1",
+  "type": "openai_key",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like an OpenAI API key.",
+  "regex": { "source": "\\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9\\-_]{20,}\\b" },
+  "fixtures": {
+    "positive": [
+      "sk-proj-aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ5a",
+      "sk-aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4"
+    ],
+    "negative": [
+      "sk-short",
+      "sk-ant-api03-aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ5"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "github.fine_grained_pat",
+  "displayName": "GitHub fine-grained PAT",
+  "tier": "tier_1",
+  "type": "github_token",
+  "confidence": "high",
+  "blockEligible": true,
+  "reason": "Looks like a GitHub fine-grained personal access token.",
+  "regex": { "source": "\\bgithub_pat_[A-Za-z0-9_]{60,}\\b" },
+  "fixtures": {
+    "positive": [
+      "github_pat_11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuV1234"
+    ],
+    "negative": [
+      "github_pat_short",
+      "create a github_pat_ token in settings"
+    ]
+  }
+}
