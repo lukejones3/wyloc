@@ -1,5 +1,5 @@
 /**
- * @ai-dlp/detector — public entry point.
+ * @wyloc/detector — public entry point.
  *
  * Local-first secret detection for AI-DLP. Zero dependencies, no DOM and
  * no Node APIs, so the exact same compiled code runs inside the browser
@@ -34,6 +34,8 @@ export type {
 
 export { defaultConfig, resolveConfig } from "./config.js";
 export { redact, maskValue } from "./redact.js";
+export { buildSwap, rehydrate } from "./swap.js";
+export type { SwapMapping, SwapResult } from "./swap.js";
 export { toIncidentMetadata, buildIncidents } from "./incident.js";
 export { SECRET_PATTERNS } from "./patterns/known.js";
 

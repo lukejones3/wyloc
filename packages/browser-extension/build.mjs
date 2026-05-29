@@ -20,6 +20,7 @@ const entryPoints = {
   content: "src/content.ts",
   background: "src/background.ts",
   popup: "src/popup.ts",
+  inject: "src/inject.ts",
 };
 
 /** Files copied verbatim into dist/. */

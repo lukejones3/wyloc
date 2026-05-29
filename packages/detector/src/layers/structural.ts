@@ -29,9 +29,14 @@ export interface StructuralMatch {
  *   KEY: value      (yaml-ish)
  *   export KEY=value
  * The key must look like an identifier; the value must be non-trivial.
+ *
+ * The value group is captured precisely so we can locate it by group
+ * offset rather than a fragile lastIndexOf search (which mis-fired when
+ * the value text resembled the key, e.g. inside function-call syntax
+ * like `boto3.Session(aws_access_key_id="..."`).
  */
 const ASSIGNMENT_RE =
-  /(?:^|\n)\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.\-]*)\s*[=:]\s*(['"]?)([^\n'"]{6,})\2/g;
+  /(?:^|[\n;,(])\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.\-]*)\s*[=:]\s*(['"]?)([^\n'"]{6,})\2/g;
 
 /** Keys whose name alone indicates the value is sensitive. */
 function keyIsSensitive(key: string): boolean {
@@ -45,6 +50,13 @@ function keyIsSensitive(key: string): boolean {
  * (`PORT=3000`, `NODE_ENV=production`) from generating noise.
  */
 function isWorthSurfacing(key: string, value: string): boolean {
+  // Reject values that contain code syntax. Real credential values never
+  // contain parentheses, equals signs, or internal spaces — but code like
+  // `boto3.Session(aws_access_key_id=` does. Without this guard the
+  // assignment regex misreads function-call syntax as a secret and the
+  // swap engine mangles surrounding code.
+  if (/[()\s=]/.test(value)) return false;
+
   if (keyIsSensitive(key)) return true;
   if (
     value.length >= 16 &&
@@ -67,14 +79,22 @@ export function findStructuralMatches(text: string): StructuralMatch[] {
     if (value.length === 0) continue;
     if (!isWorthSurfacing(key, value)) continue;
 
-    // Compute offsets of the value within the original text. The leading
-    // (?:^|\n)\s* may have consumed characters before the key.
-    const matchText = m[0];
-    const valueOffsetInMatch = matchText.lastIndexOf(value);
-    const start = m.index + valueOffsetInMatch;
+    // Locate the value group precisely. m[3] is the raw (untrimmed)
+    // value capture; its start is the end of the full match minus the
+    // closing quote (m[2]) and the raw value length. This avoids the
+    // lastIndexOf pitfall where value-like substrings appear earlier in
+    // the match (e.g. function-call syntax misread as an assignment).
+    const rawValue = m[3] ?? "";
+    const quote = m[2] ?? "";
+    const matchEnd = m.index + m[0].length;
+    const rawValueStart = matchEnd - quote.length - rawValue.length;
+    // Account for whitespace trimmed off the left of the value.
+    const leadingTrim = rawValue.length - rawValue.trimStart().length;
+    const start = rawValueStart + leadingTrim;
+
     matches.push({
       ruleId: "structural.assignment",
-      fullText: matchText.trim(),
+      fullText: m[0].trim(),
       value,
       start,
       end: start + value.length,

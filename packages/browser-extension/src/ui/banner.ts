@@ -19,6 +19,8 @@ import { maskValue } from "@wyloc/detector";
 export interface BannerCallbacks {
   /** User chose to proceed despite findings (warn dismiss or block override). */
   onProceed: () => void;
+  /** User chose to swap secrets for structural mocks, then send. */
+  onSwap: () => void;
   /** User chose to redact — replace secrets with placeholders in the input. */
   onRedact: () => void;
   /** User dismissed without action (warn only). */
@@ -86,8 +88,8 @@ export function showBanner(
     ? "Hold on — this prompt contains a secret"
     : "Heads up — this prompt may contain a secret";
   const explainer = isBlock
-    ? "Sending this would share a credential with an AI tool. Redact it, or send anyway if it's safe."
-    : "Review before sending. You can redact it, or continue if it's fine.";
+    ? "Sending this would share a credential with an AI tool. Swap it for a safe stand-in, redact it, or send anyway."
+    : "Review before sending. Swap it for a safe stand-in, redact it, or continue.";
 
   // Anchor the host as a fixed overlay so it is ALWAYS visible,
   // regardless of where the user is scrolled. Prompt inputs sit at the
@@ -131,8 +133,13 @@ export function showBanner(
         padding: 6px 12px; border-radius: 6px; cursor: pointer;
         border: 1px solid transparent;
       }
-      .redact { background: #2f6f4f; color: #fff; }
-      .redact:hover { background: #275f43; }
+      .swap { background: #2f6f4f; color: #fff; }
+      .swap:hover { background: #275f43; }
+      .redact {
+        background: transparent;
+        border-color: #bbb; color: #444;
+      }
+      .redact:hover { background: #00000008; }
       .proceed {
         background: transparent;
         border-color: #bbb; color: #444;
@@ -152,9 +159,10 @@ export function showBanner(
         ${extra > 0 ? `<li class="extra">+${extra} more</li>` : ""}
       </ul>
       <div class="row">
-        <button class="redact">Redact &amp; keep editing</button>
+        <button class="swap">Swap</button>
+        <button class="redact">Redact</button>
         <button class="proceed">${
-          isBlock ? "Send anyway" : "Continue"
+          isBlock ? "Allow — I'll send" : "Continue"
         }</button>
         ${
           isBlock
@@ -165,6 +173,12 @@ export function showBanner(
     </div>
   `;
 
+  shadow
+    .querySelector(".swap")
+    ?.addEventListener("click", () => {
+      clearBanner();
+      callbacks.onSwap();
+    });
   shadow
     .querySelector(".redact")
     ?.addEventListener("click", () => {
