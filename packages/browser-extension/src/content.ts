@@ -21,6 +21,16 @@ import { adapterFor, type SiteAdapter } from "./adapters/index.js";
 import { showBanner, clearBanner } from "./ui/banner.js";
 import { reportIncidents } from "./incident-bridge.js";
 
+// Double-injection guard — programmatic injection at install/update time can
+// run alongside the manifest-declared injection for already-open tabs.
+// Mirror the __wylocClipboardProxy pattern in inject.ts.
+const __alreadyInjected = (() => {
+  const w = window as unknown as { __wylocContentInjected?: boolean };
+  if (w.__wylocContentInjected) return true;
+  w.__wylocContentInjected = true;
+  return false;
+})();
+
 // ── Adapter or universal mode ──────────────────────────────────────
 
 const siteAdapter: SiteAdapter | null = adapterFor(location.hostname);
@@ -134,9 +144,11 @@ function generateSalt(): string {
 
 // Wipe the mapping store when the tab/page goes away (memory hygiene —
 // engineering doc §3: session-scoped ephemeral storage).
-window.addEventListener("pagehide", () => {
-  swapMappings = [];
-});
+if (!__alreadyInjected) {
+  window.addEventListener("pagehide", () => {
+    swapMappings = [];
+  });
+}
 let bannerOpen = false;
 
 /** Elements we've directly attached listeners to. */
@@ -145,8 +157,10 @@ let attachedSendBtn: HTMLElement | null = null;
 
 // ── Bootstrap ──────────────────────────────────────────────────────
 
-installDocumentInterceptors();
-installObserver();
+if (!__alreadyInjected) {
+  installDocumentInterceptors();
+  installObserver();
+}
 
 // ── Mode A: document-level capture ─────────────────────────────────
 
@@ -455,9 +469,11 @@ function applySwap(input: HTMLElement, result: ScanResult): void {
 //      a code block. This call happens in the page's MAIN world and is
 //      invisible to an isolated-world DOM listener, so a small proxy
 //      injected into the main world forwards the text to us here.
-installCopyRehydration();
-installClipboardProxyBridge();
-installPopupMappingBridge();
+if (!__alreadyInjected) {
+  installCopyRehydration();
+  installClipboardProxyBridge();
+  installPopupMappingBridge();
+}
 
 /**
  * Hand the current session's mock→real mappings to the popup on request.
