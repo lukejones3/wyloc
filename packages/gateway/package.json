@@ -1,0 +1,27 @@
+{
+  "name": "@wyloc/gateway",
+  "version": "0.1.0",
+  "description": "Local proxy that sits between Claude Code (and other base-URL-configurable CLI/IDE clients) and the Anthropic API, swapping secrets out of prompts before they leave the machine and rehydrating them in the streamed response. Reuses the @wyloc/detector engine.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "wyloc-gateway": "./dist/index.js"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx test-rehydrate-unit.mjs && node test-passthrough.mjs && node test-swap.mjs && node test-roundtrip.mjs"
+  },
+  "dependencies": {
+    "@wyloc/detector": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
