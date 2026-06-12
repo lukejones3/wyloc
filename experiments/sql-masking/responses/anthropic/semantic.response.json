@@ -1,0 +1,30 @@
+{
+  "model": "claude-opus-4-8",
+  "id": "msg_01JPCBwbetnoJmdTdUBY1i9g",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "# Analysis\n\n## The Core Bottleneck\n\nThe single biggest problem isn't the indexes \u2014 it's that **`feed` is a CTE that gets materialized once but referenced three times**, and one of those references is inside a **correlated subquery in the final SELECT** (`feed f2 WHERE f2.company_id = a.company_id`).\n\nIn Postgres, a CTE referenced multiple times is materialized by default (pre-PG12 always; PG12+ when referenced more than once). That means:\n\n1. `feed` is computed once (good), but it includes the **expensive WHERE clause** \u2014 the `NOT EXISTS` over an `unnest`'d array with `LIKE '%...%'`, the giant state `IN` lists, the join to `mart_risk_index`.\n2. The correlated subquery for `\"topVerticals\"` re-scans the materialized `feed` **once per output company**. With `LIMIT 100` after sorting, that's up to 100 scans of the full materialized set.\n\nAlso notice: **`feed` itself already filters `jp.domain = 'finance'`**. So inside `topVerticals`, `f2.domain` is *always* `'finance'` \u2014 the entire `topVerticals` subquery is dead logic that can only ever return `['finance']`. That's a semantic bug worth confirming with the author, but it also means the most expensive part of the final SELECT is pointless.\n\n## Secondary bottlenecks\n\n- The `NOT EXISTS (... unnest(ARRAY[...]) ... LIKE '%match%')` runs a substring match against ~26 patterns for every candidate row. This can't use an index and is CPU-heavy. It belongs on the **company dimension**, not per-posting.\n- The `LEFT JOIN mart_risk_index` is keyed on `job_id` and only used for `gp` / `median_ghost`. Fine as a join, but make sure it has a usable index.\n- The big `UPPER(loc_state) IN (...)` / `loc_country IN (...)` predicate is a row-level CPU filter, not indexable as written.\n\n---\n\n# Recommended Indexes\n\nThe driving selective predicate is `data_tier = 1 AND status = 'raw' AND domain = 'finance'`. Build a partial composite index that captures the cheap, sargable equality filters and carries the columns needed downstream:\n\n```sql\n-- Primary access path for the `feed` scan\nCREATE INDEX ix_fact_postings_feed\n  ON fact_postings (company_id)\n  INCLUDE (job_id, loc_country, loc_state, ingestion_source, workplace_type,\n           salary_min_annual, salary_max_annual, status, posted_date,\n           date_found, last_seen_at)\n  WHERE data_tier = 1 AND domain = 'finance';\n```\n\nA partial index on `(data_tier=1, domain='finance')` is ideal because those are constant equality filters \u2014 it shrinks the index to exactly the working set. I left `status` out of the predicate because `feed` is reused for both `'raw'` and `'expired'` rows (the `exp_days` CTE filters `status='expired'` *after* the fact). If in practice you only ever need `status IN ('raw','expired')`, add that too.\n\nFor the join:\n\n```sql\nCREATE INDEX ix_mart_risk_index_job ON analytics_analytics.mart_risk_index (job_id)\n  INCLUDE (risk_score);\n\n-- companies join key (likely already the PK)\nCREATE INDEX ix_companies_pk ON companies (company_id) INCLUDE (company_name);\n```\n\nFor the federal-firm exclusion, precompute it on the dimension so it's evaluated once per company, not per posting:\n\n```sql\n-- a generated/maintained flag is far better than per-row LIKE\nALTER TABLE companies ADD COLUMN is_excluded_firm boolean;\n-- populate via the LIKE logic once; refresh on company name change\nCREATE INDEX ix_companies_not_excluded ON companies (company_id)\n  WHERE is_excluded_firm IS NOT TRUE;\n```\n\n---\n\n# Rewritten Query\n\nKey changes:\n1. **Force `feed` to materialize once** (`MATERIALIZED`) so the heavy filter runs a single time.\n2. **Eliminate the correlated `topVerticals` subquery** \u2014 since `feed` is already `domain='finance'`, the result is constant. (Confirm intent; if the author meant to compute verticals from an *unfiltered* feed, that's a different fix \u2014 see note.)\n3. **Move the federal-firm exclusion to the company dimension** (precomputed flag).\n4. Compute the state-list / location predicate once; consider a static lookup table or domain.\n\n```sql\nWITH feed AS MATERIALIZED (\n  SELECT\n    jp.company_id,\n    c.company_name,\n    jp.domain,\n    (jp.salary_min_annual IS NOT NULL AND jp.salary_max_annual IS NOT NULL) AS disclosed,\n    CASE\n      WHEN mgi.risk_score::double precision > 1.0\n        THEN mgi.risk_score::double precision / 100.0\n      WHEN mgi.risk_score IS NOT NULL\n        THEN mgi.risk_score::double precision\n      ELSE NULL\n    END AS gp,\n    jp.status,\n    jp.posted_date,\n    jp.date_found,\n    jp.last_seen_at\n  FROM fact_postings jp\n  JOIN companies c\n    ON c.company_id = jp.company_id\n   AND c.is_excluded_firm IS NOT TRUE          -- exclusion moved to the dimension\n  LEFT JOIN analytics_analytics.mart_risk_index mgi\n    ON mgi.job_id = jp.job_id\n  WHERE jp.data_tier = 1\n    AND jp.status IN ('raw', 'expired')         -- both consumers need these; filtered per-CTE below\n    AND jp.domain = 'finance'\n    AND (jp.loc_country IS NULL OR jp.loc_country <> 'foreign')\n    AND (\n      (jp.loc_country IN ('US','United States"
+    }
+  ],
+  "stop_reason": "max_tokens",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 2691,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2048,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global"
+  }
+}

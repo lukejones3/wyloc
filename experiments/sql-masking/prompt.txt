@@ -1,0 +1,1 @@
+Optimize this Postgres query for performance. It runs on a large base table filtered to a small selective subset, then aggregates by a grouping column. Identify the most likely bottleneck, recommend specific indexes, and rewrite the query if it would help.

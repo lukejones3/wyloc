@@ -1,0 +1,97 @@
+# Analysis
+
+## The Core Bottleneck
+
+The single biggest problem isn't the indexes — it's that **`feed` is a CTE that gets materialized once but referenced three times**, and one of those references is inside a **correlated subquery in the final SELECT** (`feed f2 WHERE f2.company_id = a.company_id`).
+
+In Postgres, a CTE referenced multiple times is materialized by default (pre-PG12 always; PG12+ when referenced more than once). That means:
+
+1. `feed` is computed once (good), but it includes the **expensive WHERE clause** — the `NOT EXISTS` over an `unnest`'d array with `LIKE '%...%'`, the giant state `IN` lists, the join to `mart_risk_index`.
+2. The correlated subquery for `"topVerticals"` re-scans the materialized `feed` **once per output company**. With `LIMIT 100` after sorting, that's up to 100 scans of the full materialized set.
+
+Also notice: **`feed` itself already filters `jp.domain = 'finance'`**. So inside `topVerticals`, `f2.domain` is *always* `'finance'` — the entire `topVerticals` subquery is dead logic that can only ever return `['finance']`. That's a semantic bug worth confirming with the author, but it also means the most expensive part of the final SELECT is pointless.
+
+## Secondary bottlenecks
+
+- The `NOT EXISTS (... unnest(ARRAY[...]) ... LIKE '%match%')` runs a substring match against ~26 patterns for every candidate row. This can't use an index and is CPU-heavy. It belongs on the **company dimension**, not per-posting.
+- The `LEFT JOIN mart_risk_index` is keyed on `job_id` and only used for `gp` / `median_ghost`. Fine as a join, but make sure it has a usable index.
+- The big `UPPER(loc_state) IN (...)` / `loc_country IN (...)` predicate is a row-level CPU filter, not indexable as written.
+
+---
+
+# Recommended Indexes
+
+The driving selective predicate is `data_tier = 1 AND status = 'raw' AND domain = 'finance'`. Build a partial composite index that captures the cheap, sargable equality filters and carries the columns needed downstream:
+
+```sql
+-- Primary access path for the `feed` scan
+CREATE INDEX ix_fact_postings_feed
+  ON fact_postings (company_id)
+  INCLUDE (job_id, loc_country, loc_state, ingestion_source, workplace_type,
+           salary_min_annual, salary_max_annual, status, posted_date,
+           date_found, last_seen_at)
+  WHERE data_tier = 1 AND domain = 'finance';
+```
+
+A partial index on `(data_tier=1, domain='finance')` is ideal because those are constant equality filters — it shrinks the index to exactly the working set. I left `status` out of the predicate because `feed` is reused for both `'raw'` and `'expired'` rows (the `exp_days` CTE filters `status='expired'` *after* the fact). If in practice you only ever need `status IN ('raw','expired')`, add that too.
+
+For the join:
+
+```sql
+CREATE INDEX ix_mart_risk_index_job ON analytics_analytics.mart_risk_index (job_id)
+  INCLUDE (risk_score);
+
+-- companies join key (likely already the PK)
+CREATE INDEX ix_companies_pk ON companies (company_id) INCLUDE (company_name);
+```
+
+For the federal-firm exclusion, precompute it on the dimension so it's evaluated once per company, not per posting:
+
+```sql
+-- a generated/maintained flag is far better than per-row LIKE
+ALTER TABLE companies ADD COLUMN is_excluded_firm boolean;
+-- populate via the LIKE logic once; refresh on company name change
+CREATE INDEX ix_companies_not_excluded ON companies (company_id)
+  WHERE is_excluded_firm IS NOT TRUE;
+```
+
+---
+
+# Rewritten Query
+
+Key changes:
+1. **Force `feed` to materialize once** (`MATERIALIZED`) so the heavy filter runs a single time.
+2. **Eliminate the correlated `topVerticals` subquery** — since `feed` is already `domain='finance'`, the result is constant. (Confirm intent; if the author meant to compute verticals from an *unfiltered* feed, that's a different fix — see note.)
+3. **Move the federal-firm exclusion to the company dimension** (precomputed flag).
+4. Compute the state-list / location predicate once; consider a static lookup table or domain.
+
+```sql
+WITH feed AS MATERIALIZED (
+  SELECT
+    jp.company_id,
+    c.company_name,
+    jp.domain,
+    (jp.salary_min_annual IS NOT NULL AND jp.salary_max_annual IS NOT NULL) AS disclosed,
+    CASE
+      WHEN mgi.risk_score::double precision > 1.0
+        THEN mgi.risk_score::double precision / 100.0
+      WHEN mgi.risk_score IS NOT NULL
+        THEN mgi.risk_score::double precision
+      ELSE NULL
+    END AS gp,
+    jp.status,
+    jp.posted_date,
+    jp.date_found,
+    jp.last_seen_at
+  FROM fact_postings jp
+  JOIN companies c
+    ON c.company_id = jp.company_id
+   AND c.is_excluded_firm IS NOT TRUE          -- exclusion moved to the dimension
+  LEFT JOIN analytics_analytics.mart_risk_index mgi
+    ON mgi.job_id = jp.job_id
+  WHERE jp.data_tier = 1
+    AND jp.status IN ('raw', 'expired')         -- both consumers need these; filtered per-CTE below
+    AND jp.domain = 'finance'
+    AND (jp.loc_country IS NULL OR jp.loc_country <> 'foreign')
+    AND (
+      (jp.loc_country IN ('US','United States

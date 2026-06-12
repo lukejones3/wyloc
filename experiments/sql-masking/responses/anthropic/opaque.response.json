@@ -1,0 +1,30 @@
+{
+  "model": "claude-opus-4-8",
+  "id": "msg_01EiHcfxW2UJvqjRzn14V8V9",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "# Performance Analysis\n\n## The Primary Bottleneck: `cte_1` is materialized and scanned 3+ times\n\nIn Postgres, CTEs were an **optimization fence** before v12, and even in v12+ a CTE referenced **multiple times is automatically materialized** (computed once, stored, re-read). Your `cte_1` is referenced:\n\n1. In `cte_2` (aggregation)\n2. In `cte_3` (filtered aggregation)\n3. In the correlated subquery for `out_7` \u2014 **once per output row** (this is the killer)\n\nThe correlated subquery `WHERE x2.col_1 = y1.col_1` forces a re-scan of the materialized `cte_1` for each of the up to 100 final rows. If `cte_1` materializes to many rows, that's 100 sequential scans over a materialized result with no index on it.\n\nThe **base-table filter** is also expensive but secondary: the `NOT EXISTS ... unnest ... LIKE '%...%'` runs a substring scan against ~27 patterns per row, and the giant `OR` block defeats simple index usage.\n\n---\n\n## Recommended Indexes\n\nDrive the selective base filter on `table_a`. Your hard equality predicates are the index targets:\n\n```sql\n-- col_12=1, col_7='raw', col_3='finance' are equalities \u2192 leading columns\nCREATE INDEX idx_table_a_filter\n  ON table_a (col_12, col_3, col_7)\n  INCLUDE (col_1, col_11, col_13, col_14, col_15, col_16,\n           col_4, col_5, col_8, col_9, col_10);\n```\n\nOr, since the filter is fixed, a **partial index** is far smaller and more selective:\n\n```sql\nCREATE INDEX idx_table_a_finance_raw\n  ON table_a (col_1)\n  INCLUDE (col_11, col_13, col_14, col_15, col_16,\n           col_4, col_5, col_8, col_9, col_10)\n  WHERE col_12 = 1 AND col_7 = 'raw' AND col_3 = 'finance';\n```\n\nJoin supports:\n\n```sql\nCREATE INDEX idx_table_b_col1 ON table_b (col_1) INCLUDE (col_2);\nCREATE INDEX idx_table_c_col11 ON schema_a.table_c (col_11) INCLUDE (col_6);\n```\n\nFor the `out_7` re-scans (if you keep the correlated form), having `cte_1`'s grouping work on `(col_1, col_3)` matters \u2014 but the real fix is structural (below).\n\n---\n\n## Rewrite: materialize once, eliminate the correlated re-scan\n\nCompute the filtered set into a real temp table (or `MATERIALIZED` CTE you control), then do **all** aggregations as set-based passes. The `out_7` top-3 becomes a windowed aggregation instead of a per-row subquery.\n\n```sql\n-- Step 1: materialize the expensive filter exactly once\nCREATE TEMP TABLE filtered ON COMMIT DROP AS\nSELECT\n  t1.col_1, t2.col_2, t1.col_3,\n  (t1.col_4 IS NOT NULL AND t1.col_5 IS NOT NULL) AS d1,\n  CASE\n    WHEN t3.col_6::double precision > 1.0 THEN t3.col_6::double precision / 100.0\n    WHEN t3.col_6 IS NOT NULL              THEN t3.col_6::double precision\n    ELSE NULL\n  END AS d2,\n  t1.col_7, t1.col_8, t1.col_9, t1.col_10\nFROM table_a t1\nJOIN table_b t2 ON t2.col_1 = t1.col_1\nLEFT JOIN schema_a.table_c t3 ON t3.col_11 = t1.col_11\nWHERE t1.col_12 = 1\n  AND t1.col_7 = 'raw'\n  AND t1.col_3 = 'finance'\n  AND (t1.col_13 IS NULL OR t1.col_13 <> 'foreign')\n  AND <... the big OR block + NOT EXISTS unchanged ...>;\n\nCREATE INDEX ON filtered (col_1);\n\n-- Step 2: top-3 col_3 per group via window, no correlated subquery\nWITH top3 AS (\n  SELECT col_1, col_3, cnt,\n         row_number() OVER (PARTITION BY col_1 ORDER BY cnt DESC) AS rn\n  FROM (\n    SELECT col_1, col_3, COUNT(*)::int AS cnt\n    FROM filtered\n    WHERE col_3 IS NOT NULL AND BTRIM(col_3::text) <> ''\n    GROUP BY col_1, col_3\n  ) s\n),\ntop3_agg AS (\n  SELECT col_1, ARRAY_AGG(col_3 ORDER BY cnt DESC) AS arr\n  FROM top3 WHERE rn <= 3 GROUP BY col_1\n),\nagg AS (\n  SELECT col_1,\n         MAX(col_2) AS col_2,\n         COUNT(*)::int AS d3,\n         SUM(CASE WHEN d1 THEN 1 ELSE 0 END)::double precision\n           / NULLIF(COUNT(*)::double precision, 0) AS d4,\n         percentile_cont(0.5) WITHIN GROUP (ORDER BY d2) AS d5\n  FROM filtered GROUP BY col_1 HAVING COUNT(*) >= 20\n),\ndur AS (\n  SELECT col_1,\n         percentile_cont(0.5) WITHIN GROUP (\n           ORDER BY EXTRACT(EPOCH FROM (col_10 - COALESCE(col_8::timestamp, col_9::timestamp)))/86400.0\n         ) AS d6\n  FROM filtered\n  WHERE col_7 = 'expired' AND col_10 IS NOT NULL\n    AND (col_8 IS NOT NULL OR col_9 IS NOT NULL)\n    AND COAL"
+    }
+  ],
+  "stop_reason": "max_tokens",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 2363,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2048,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "service_tier": "standard",
+    "inference_geo": "global"
+  }
+}

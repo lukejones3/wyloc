@@ -1,0 +1,127 @@
+Optimize this Postgres query for performance. It runs on a large base table filtered to a small selective subset, then aggregates by a grouping column. Identify the most likely bottleneck, recommend specific indexes, and rewrite the query if it would help.
+
+```sql
+-- OPAQUE — naive masking baseline.
+-- Every table / schema / column / alias identifier replaced with a meaningless token.
+-- SQL keywords, structure, and DATA LITERALS are left intact (literals are values, not identifiers).
+WITH cte_1 AS (
+  SELECT
+    t1.col_1,
+    t2.col_2,
+    t1.col_3,
+    (t1.col_4 IS NOT NULL AND t1.col_5 IS NOT NULL) AS d1,
+    CASE
+      WHEN t3.col_6::double precision > 1.0
+        THEN t3.col_6::double precision / 100.0
+      WHEN t3.col_6 IS NOT NULL
+        THEN t3.col_6::double precision
+      ELSE NULL
+    END AS d2,
+    t1.col_7,
+    t1.col_8,
+    t1.col_9,
+    t1.col_10
+  FROM table_a t1
+  JOIN table_b t2 ON t2.col_1 = t1.col_1
+  LEFT JOIN schema_a.table_c t3 ON t3.col_11 = t1.col_11
+  WHERE t1.col_12 = 1
+    AND t1.col_7 = 'raw'
+    AND (t1.col_13 IS NULL OR t1.col_13 <> 'foreign')
+    AND NOT EXISTS (
+      SELECT 1
+      FROM unnest(ARRAY[
+        'cgsfederal','accenture federal','booz allen','mantech','saic','caci','prosidian',
+        'guidehouse','gdit','leidos','northrop grumman','parsons federal','serco federal',
+        'deloitte federal','parsons','invisible agency','cermaticom','jobs for humanity',
+        'devoteam','canonical','nxp semiconductors','relx','bosch group','about you se',
+        'sixt','scalablegmbh'
+      ]::text[]) AS fn1(mc)
+      WHERE LOWER(t2.col_2) LIKE '%' || fn1.mc || '%'
+    )
+    AND (
+      (
+        t1.col_13 IN ('US', 'United States', 'USA')
+        AND (
+          t1.col_14 IS NULL
+          OR UPPER(t1.col_14) IN (
+            'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+            'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+            'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC','PR','VI','GU','AS','MP'
+          )
+        )
+      )
+      OR (
+        t1.col_13 IS NULL
+        AND UPPER(COALESCE(t1.col_14, '')) IN (
+          'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+          'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+          'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC','PR','VI','GU','AS','MP'
+        )
+      )
+      OR (
+        t1.col_13 = 'unknown'
+        AND LOWER(COALESCE(t1.col_15, '')) IN ('greenhouse', 'lever', 'ashby')
+      )
+      OR (
+        t1.col_13 = 'unknown'
+        AND LOWER(COALESCE(t1.col_15, '')) = 'workday'
+        AND LOWER(COALESCE(t1.col_16, '')) = 'remote'
+      )
+    )
+    AND t1.col_3 = 'finance'
+),
+cte_2 AS (
+  SELECT
+    col_1,
+    MAX(col_2) AS col_2,
+    COUNT(*)::int AS d3,
+    SUM(CASE WHEN d1 THEN 1 ELSE 0 END)::double precision
+      / NULLIF(COUNT(*)::double precision, 0) AS d4,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY d2) AS d5
+  FROM cte_1
+  GROUP BY col_1
+  HAVING COUNT(*) >= 20
+),
+cte_3 AS (
+  SELECT
+    x1.col_1,
+    percentile_cont(0.5) WITHIN GROUP (
+      ORDER BY EXTRACT(EPOCH FROM (x1.col_10 - COALESCE(x1.col_8::timestamp, x1.col_9::timestamp)))
+        / 86400.0
+    ) AS d6
+  FROM cte_1 x1
+  WHERE x1.col_7 = 'expired'
+    AND x1.col_10 IS NOT NULL
+    AND (x1.col_8 IS NOT NULL OR x1.col_9 IS NOT NULL)
+    AND COALESCE(x1.col_8::timestamp, x1.col_9::timestamp) <= x1.col_10
+  GROUP BY x1.col_1
+  HAVING COUNT(*) >= 5
+)
+SELECT
+  y1.col_1::text AS "out_1",
+  y1.col_2 AS "out_2",
+  y1.d3 AS "out_3",
+  COALESCE(y1.d4, 0)::double precision AS "out_4",
+  y1.d5::double precision AS "out_5",
+  y2.d6::double precision AS "out_6",
+  COALESCE(
+    (
+      SELECT ARRAY_AGG(z1.col_3 ORDER BY z1.d7 DESC)
+      FROM (
+        SELECT x2.col_3, COUNT(*)::int AS d7
+        FROM cte_1 x2
+        WHERE x2.col_1 = y1.col_1
+          AND x2.col_3 IS NOT NULL
+          AND BTRIM(x2.col_3::text) <> ''
+        GROUP BY x2.col_3
+        ORDER BY d7 DESC
+        LIMIT 3
+      ) z1
+    ),
+    ARRAY[]::text[]
+  ) AS "out_7"
+FROM cte_2 y1
+LEFT JOIN cte_3 y2 ON y2.col_1 = y1.col_1
+ORDER BY y1.d5 ASC NULLS LAST, y1.d3 DESC
+LIMIT 100;
+```

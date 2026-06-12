@@ -1,0 +1,109 @@
+# Performance Analysis
+
+## The Primary Bottleneck: `cte_1` is materialized and scanned 3+ times
+
+In Postgres, CTEs were an **optimization fence** before v12, and even in v12+ a CTE referenced **multiple times is automatically materialized** (computed once, stored, re-read). Your `cte_1` is referenced:
+
+1. In `cte_2` (aggregation)
+2. In `cte_3` (filtered aggregation)
+3. In the correlated subquery for `out_7` — **once per output row** (this is the killer)
+
+The correlated subquery `WHERE x2.col_1 = y1.col_1` forces a re-scan of the materialized `cte_1` for each of the up to 100 final rows. If `cte_1` materializes to many rows, that's 100 sequential scans over a materialized result with no index on it.
+
+The **base-table filter** is also expensive but secondary: the `NOT EXISTS ... unnest ... LIKE '%...%'` runs a substring scan against ~27 patterns per row, and the giant `OR` block defeats simple index usage.
+
+---
+
+## Recommended Indexes
+
+Drive the selective base filter on `table_a`. Your hard equality predicates are the index targets:
+
+```sql
+-- col_12=1, col_7='raw', col_3='finance' are equalities → leading columns
+CREATE INDEX idx_table_a_filter
+  ON table_a (col_12, col_3, col_7)
+  INCLUDE (col_1, col_11, col_13, col_14, col_15, col_16,
+           col_4, col_5, col_8, col_9, col_10);
+```
+
+Or, since the filter is fixed, a **partial index** is far smaller and more selective:
+
+```sql
+CREATE INDEX idx_table_a_finance_raw
+  ON table_a (col_1)
+  INCLUDE (col_11, col_13, col_14, col_15, col_16,
+           col_4, col_5, col_8, col_9, col_10)
+  WHERE col_12 = 1 AND col_7 = 'raw' AND col_3 = 'finance';
+```
+
+Join supports:
+
+```sql
+CREATE INDEX idx_table_b_col1 ON table_b (col_1) INCLUDE (col_2);
+CREATE INDEX idx_table_c_col11 ON schema_a.table_c (col_11) INCLUDE (col_6);
+```
+
+For the `out_7` re-scans (if you keep the correlated form), having `cte_1`'s grouping work on `(col_1, col_3)` matters — but the real fix is structural (below).
+
+---
+
+## Rewrite: materialize once, eliminate the correlated re-scan
+
+Compute the filtered set into a real temp table (or `MATERIALIZED` CTE you control), then do **all** aggregations as set-based passes. The `out_7` top-3 becomes a windowed aggregation instead of a per-row subquery.
+
+```sql
+-- Step 1: materialize the expensive filter exactly once
+CREATE TEMP TABLE filtered ON COMMIT DROP AS
+SELECT
+  t1.col_1, t2.col_2, t1.col_3,
+  (t1.col_4 IS NOT NULL AND t1.col_5 IS NOT NULL) AS d1,
+  CASE
+    WHEN t3.col_6::double precision > 1.0 THEN t3.col_6::double precision / 100.0
+    WHEN t3.col_6 IS NOT NULL              THEN t3.col_6::double precision
+    ELSE NULL
+  END AS d2,
+  t1.col_7, t1.col_8, t1.col_9, t1.col_10
+FROM table_a t1
+JOIN table_b t2 ON t2.col_1 = t1.col_1
+LEFT JOIN schema_a.table_c t3 ON t3.col_11 = t1.col_11
+WHERE t1.col_12 = 1
+  AND t1.col_7 = 'raw'
+  AND t1.col_3 = 'finance'
+  AND (t1.col_13 IS NULL OR t1.col_13 <> 'foreign')
+  AND <... the big OR block + NOT EXISTS unchanged ...>;
+
+CREATE INDEX ON filtered (col_1);
+
+-- Step 2: top-3 col_3 per group via window, no correlated subquery
+WITH top3 AS (
+  SELECT col_1, col_3, cnt,
+         row_number() OVER (PARTITION BY col_1 ORDER BY cnt DESC) AS rn
+  FROM (
+    SELECT col_1, col_3, COUNT(*)::int AS cnt
+    FROM filtered
+    WHERE col_3 IS NOT NULL AND BTRIM(col_3::text) <> ''
+    GROUP BY col_1, col_3
+  ) s
+),
+top3_agg AS (
+  SELECT col_1, ARRAY_AGG(col_3 ORDER BY cnt DESC) AS arr
+  FROM top3 WHERE rn <= 3 GROUP BY col_1
+),
+agg AS (
+  SELECT col_1,
+         MAX(col_2) AS col_2,
+         COUNT(*)::int AS d3,
+         SUM(CASE WHEN d1 THEN 1 ELSE 0 END)::double precision
+           / NULLIF(COUNT(*)::double precision, 0) AS d4,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY d2) AS d5
+  FROM filtered GROUP BY col_1 HAVING COUNT(*) >= 20
+),
+dur AS (
+  SELECT col_1,
+         percentile_cont(0.5) WITHIN GROUP (
+           ORDER BY EXTRACT(EPOCH FROM (col_10 - COALESCE(col_8::timestamp, col_9::timestamp)))/86400.0
+         ) AS d6
+  FROM filtered
+  WHERE col_7 = 'expired' AND col_10 IS NOT NULL
+    AND (col_8 IS NOT NULL OR col_9 IS NOT NULL)
+    AND COAL

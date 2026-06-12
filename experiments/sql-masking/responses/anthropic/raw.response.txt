@@ -1,0 +1,102 @@
+# Analysis
+
+## The Core Problem: `feed` CTE is computed 3+ times
+
+The biggest issue isn't indexing — it's the **query structure**. The `feed` CTE is referenced in `agg`, `exp_days`, and the correlated subquery in the SELECT. In Postgres, CTEs are not always materialized (since PG12 they can be inlined), but here:
+
+1. `exp_days` re-scans `feed` but filters `status = 'expired'` — **yet `feed` itself filters `jp.status = 'raw'`**. This means **`exp_days` always returns zero rows** (`status` can't be both `'raw'` and `'expired'`). That's a latent bug producing a dead branch and wasted planning.
+
+2. The correlated subquery `topVerticals` re-evaluates `feed` per output row. But `feed` already filtered `jp.domain = 'finance'`, so `f2.domain` is always `'finance'` — **`topVerticals` always returns `['finance']`**. Another dead/constant branch.
+
+So two of three `feed` consumers are logically degenerate given the `WHERE` clauses inside `feed`. Confirm intent before optimizing.
+
+## Likely Bottleneck
+
+Given a "large base table → small selective subset," the bottleneck is the **scan of `job_postings`** before aggregation. The dominant selective predicates are:
+
+```sql
+jp.data_tier = 1 AND jp.status = 'raw' AND jp.domain = 'finance'
+```
+
+The location `OR` blob and the `NOT EXISTS` company-name filter are **non-sargable** (function calls, `OR` across columns, `LIKE '%...%'`) and should run *after* the index narrows rows, not drive the scan.
+
+---
+
+# Recommendations
+
+## 1. Partial composite index on the selective equality predicates
+
+```sql
+CREATE INDEX idx_jp_finance_raw_feed
+ON job_postings (company_id)
+INCLUDE (job_id, domain, loc_country, loc_state, ingestion_source,
+         workplace_type, salary_min_annual, salary_max_annual,
+         status, posted_date, date_found, last_seen_at)
+WHERE data_tier = 1 AND status = 'raw' AND domain = 'finance';
+```
+
+A **partial index** matching the constant predicates is ideal here because `data_tier=1`, `status='raw'`, `domain='finance'` are fixed in this query path. Leading with `company_id` supports the `GROUP BY`. The `INCLUDE` columns make it a **covering index**, avoiding heap fetches for the location/salary logic.
+
+If these constants vary across other callers, drop the `WHERE` and make them index key columns instead:
+
+```sql
+CREATE INDEX idx_jp_feed
+ON job_postings (data_tier, status, domain, company_id)
+INCLUDE (job_id, loc_country, loc_state, ingestion_source,
+         workplace_type, salary_min_annual, salary_max_annual,
+         posted_date, date_found, last_seen_at);
+```
+
+## 2. Index the join
+
+```sql
+-- if not already PK/unique:
+CREATE INDEX idx_mgi_job_id
+ON analytics_analytics.mart_ghost_job_index (job_id)
+INCLUDE (ghost_probability);
+
+-- ensure companies join is indexed (PK normally covers this):
+-- companies(company_id) PK assumed.
+```
+
+## 3. Fix the `NOT EXISTS` federal filter
+
+`LOWER(c.company_name) LIKE '%' || match || '%'` against an unnested array is fine functionally, but it forces per-row work. Two improvements:
+
+- Precompute `LOWER(c.company_name)` once.
+- Consider a materialized exclusion set or a `pg_trgm` GIN index on `companies.company_name` if this list grows. For ~28 fixed terms, the bigger win is just running it on the already-narrowed row set.
+
+```sql
+CREATE INDEX idx_companies_name_trgm
+ON companies USING gin (LOWER(company_name) gin_trgm_ops); -- requires pg_trgm
+```
+
+---
+
+# Rewritten Query
+
+Removing the degenerate branches and avoiding correlated re-scans. Assuming the `expired`/`topVerticals` logic was a real intent over a *broader* feed (not the `status='raw'`/`domain='finance'`-restricted one), I split the base scan so each consumer sees the correct rows. **If they truly should use the restricted feed, they are constants and should be hardcoded.**
+
+```sql
+WITH base AS MATERIALIZED (   -- scan job_postings ONCE; force materialization
+  SELECT
+    jp.company_id, jp.job_id, c.company_name, jp.domain, jp.status,
+    (jp.salary_min_annual IS NOT NULL AND jp.salary_max_annual IS NOT NULL) AS disclosed,
+    CASE
+      WHEN mgi.ghost_probability::double precision > 1.0
+        THEN mgi.ghost_probability::double precision / 100.0
+      WHEN mgi.ghost_probability IS NOT NULL
+        THEN mgi.ghost_probability::double precision
+      ELSE NULL
+    END AS gp,
+    jp.posted_date, jp.date_found, jp.last_seen_at
+  FROM job_postings jp
+  JOIN companies c ON c.company_id = jp.company_id
+  LEFT JOIN analytics_analytics.mart_ghost_job_index mgi ON mgi.job_id = jp.job_id
+  WHERE jp.data_tier = 1
+    AND jp.domain = 'finance'
+    AND (jp.loc_country IS NULL OR jp.loc_country <> 'foreign')
+    AND ( /* location OR-blob unchanged */ TRUE )   -- keep your existing OR logic here
+    AND NOT EXISTS (
+      SELECT 1 FROM unnest(ARRAY[ /* federal list */ ]::text[]) AS federal_firm(match)
+      WHERE LOWER(c.company_name) LIKE '%'
