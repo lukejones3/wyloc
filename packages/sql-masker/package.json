@@ -1,0 +1,29 @@
+{
+  "name": "@wyloc/sql-masker",
+  "version": "0.1.0",
+  "description": "AST-based, semantic-preserving SQL identifier masking for prompt-time DLP. Masks proprietary tables/schemas/columns before SQL is sent to an LLM, preserves query-local structure (CTEs, aliases), and is reversible in-session.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "python"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx test/run.ts",
+    "test:watch": "tsx --watch test/run.ts",
+    "setup:python": "pip install -r python/requirements.txt"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

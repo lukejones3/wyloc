@@ -1,0 +1,4 @@
+# Pinned parser dependency for the @wyloc/sql-masker worker.
+# Install into the package's own environment:  npm run setup:python
+# (or: python3 -m pip install -r python/requirements.txt)
+sqlglot>=25,<31
