@@ -10,6 +10,8 @@ export interface Renames {
   columns: Record<string, string>;
   /** query-local identifier (alias) name -> mask, renamed at every occurrence */
   identifiers: Record<string, string>;
+  /** string-literal value -> scrubbed value, replaced by exact match */
+  literals: Record<string, string>;
 }
 
 /**
@@ -21,6 +23,8 @@ export interface Renames {
 export interface SqlParser {
   /** Parse + scope-resolve a query into its identifier inventory. */
   classify(sql: string, dialect: string): Promise<Classification>;
+  /** Return the distinct string-literal values in the query. */
+  extractLiterals(sql: string, dialect: string): Promise<string[]>;
   /** Apply renames at the AST level and regenerate valid SQL in `dialect`. */
   rewrite(
     sql: string,

@@ -88,8 +88,21 @@ def _strip_comments(root):
     return root
 
 
-def rewrite(sql, dialect, tables, schemas, columns, identifiers, strip_comments=True):
-    """Apply identifier renames at the AST level and regenerate valid SQL."""
+def literals(sql, dialect):
+    """Return the distinct string-literal values in the query (for value scrubbing)."""
+    root = sqlglot.parse_one(sql, dialect=dialect)
+    seen = set()
+    out = []
+    for lit in root.find_all(exp.Literal):
+        if lit.is_string and lit.this not in seen:
+            seen.add(lit.this)
+            out.append(lit.this)
+    return {"literals": out}
+
+
+def rewrite(sql, dialect, tables, schemas, columns, identifiers,
+            literals_map=None, strip_comments=True):
+    """Apply identifier + string-literal renames at the AST level, regenerate SQL."""
     root = sqlglot.parse_one(sql, dialect=dialect)
     if strip_comments:
         _strip_comments(root)
@@ -98,6 +111,7 @@ def rewrite(sql, dialect, tables, schemas, columns, identifiers, strip_comments=
     schemas = schemas or {}
     columns = columns or {}
     identifiers = identifiers or {}
+    literals_map = literals_map or {}
 
     def rename_phys_and_cols(node):
         if isinstance(node, exp.Table) and node.name not in cte_names:
@@ -124,6 +138,14 @@ def rewrite(sql, dialect, tables, schemas, columns, identifiers, strip_comments=
             return node
         root = root.transform(rename_ids)
 
+    # String-literal value scrubbing: replace whole literal values by exact match.
+    if literals_map:
+        def rename_lits(node):
+            if isinstance(node, exp.Literal) and node.is_string and node.this in literals_map:
+                node.set("this", literals_map[node.this])
+            return node
+        root = root.transform(rename_lits)
+
     return {"sql": root.sql(dialect=dialect)}
 
 
@@ -134,12 +156,14 @@ def handle(req):
     dialect = req.get("dialect", "postgres")
     if op == "classify":
         return classify(req["sql"], dialect)
+    if op == "literals":
+        return literals(req["sql"], dialect)
     if op == "rewrite":
         return rewrite(
             req["sql"], dialect,
             req.get("tables"), req.get("schemas"),
             req.get("columns"), req.get("identifiers"),
-            req.get("stripComments", True),
+            req.get("literals"), req.get("stripComments", True),
         )
     raise ValueError(f"unknown op: {op!r}")
 

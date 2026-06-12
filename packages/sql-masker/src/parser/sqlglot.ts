@@ -107,6 +107,15 @@ export class SqlglotWorker implements SqlParser {
     return this.request<Classification>({ op: "classify", sql, dialect });
   }
 
+  async extractLiterals(sql: string, dialect: string): Promise<string[]> {
+    const result = await this.request<{ literals: string[] }>({
+      op: "literals",
+      sql,
+      dialect,
+    });
+    return result.literals;
+  }
+
   async rewrite(
     sql: string,
     dialect: string,
@@ -121,6 +130,7 @@ export class SqlglotWorker implements SqlParser {
       schemas: renames.schemas,
       columns: renames.columns,
       identifiers: renames.identifiers,
+      literals: renames.literals,
       stripComments,
     });
     return result.sql;

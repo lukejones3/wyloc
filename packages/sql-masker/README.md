@@ -58,6 +58,11 @@ masker.close();
 - **Concept-echo aliases** → a query-local alias whose name derives from a masked
   concept (mask `ghost_probability`, alias `median_ghost`) is itself masked,
   consistently across all references. This was a real leak found in validation.
+- **Literal/value scrubbing** (separate AST pass, via `@wyloc/detector`) → scrubs
+  sensitive *values* in string literals: an org blocklist (e.g. a federal-staffing
+  company list) and PII patterns (email/SSN) are redacted, and secrets the
+  detector finds (API keys, DB URLs) are swapped for structural mocks. Operates on
+  literal values only, so it can't corrupt SQL structure. Off via `scrubLiterals`.
 - **Comments** → stripped (an uncontrolled leak channel; also found in testing).
 - **Session map** → RAM-only, bidirectional, never serialized or logged.
 - **Rehydration** → reverses only tokens it created; passes through identifiers
@@ -75,9 +80,7 @@ proprietary-column rules, dialect, hashing, and comment stripping. See
 
 ## Out of scope (later phases — not built here)
 
-- **Literal / value scrubbing** (e.g. a company blocklist or PII in `WHERE`) —
-  a separate pass using `@wyloc/detector`, not this module.
-- **Gateway integration** — this is standalone first.
+- **Gateway integration** — wiring this into `@wyloc/gateway`'s request path.
 - **Dynamic / string-built SQL** (f-strings) — v1 targets clean, parseable SQL.
 
 ## Layout
@@ -87,8 +90,9 @@ src/
   engine.ts        SqlMasker — orchestration + policy application
   config.ts        MaskerConfig + defaults (the policy seam)
   mask.ts          mask-name generation + concept-token derivation
+  literals.ts      literal/value scrubbing pass (blocklist / PII / detector secrets)
   session.ts       RAM-only bidirectional real<->mask map
-  rehydrate.ts     reverse known tokens, pass through unknowns
+  rehydrate.ts     reverse known tokens + values, pass through unknowns
   hash.ts          deterministic identifier-safe short hash
   parser/          SqlParser seam + SqlglotWorker (Python sidecar)
 python/worker.py   persistent sqlglot JSON-RPC worker

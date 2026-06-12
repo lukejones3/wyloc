@@ -7,6 +7,7 @@ import {
   maskSchemaName,
   maskTableName,
 } from "./mask.js";
+import { scrubLiterals } from "./literals.js";
 import { rehydrate } from "./rehydrate.js";
 import { SessionMap } from "./session.js";
 import { SqlglotWorker } from "./parser/sqlglot.js";
@@ -23,6 +24,7 @@ export interface MaskResult {
   maskedSchemas: string[];
   maskedColumns: string[];
   maskedAliases: string[];
+  scrubbedLiterals: string[];
   preservedCtes: string[];
   conceptTokens: string[];
 }
@@ -133,7 +135,18 @@ export class SqlMasker {
       }
     }
 
-    const renames: Renames = { tables, schemas, columns, identifiers };
+    // 4. Literal/value scrubbing — a separate pass over string literals only.
+    const literals: Record<string, string> = {};
+    const scrubbedLiterals: string[] = [];
+    if (cfg.scrubLiterals) {
+      const values = await this.parser.extractLiterals(sql, cfg.dialect);
+      const res = scrubLiterals(values, cfg);
+      Object.assign(literals, res.valueMap);
+      for (const mp of res.mappings) session.add("literal", mp.real, mp.mask);
+      scrubbedLiterals.push(...Object.keys(res.valueMap));
+    }
+
+    const renames: Renames = { tables, schemas, columns, identifiers, literals };
     const masked = await this.parser.rewrite(sql, cfg.dialect, renames, cfg.stripComments);
 
     return {
@@ -144,6 +157,7 @@ export class SqlMasker {
       maskedSchemas,
       maskedColumns,
       maskedAliases,
+      scrubbedLiterals,
       preservedCtes: c.cteNames.filter((n) => !(n in identifiers)),
       conceptTokens: [...concepts],
     };

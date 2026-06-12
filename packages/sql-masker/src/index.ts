@@ -7,6 +7,11 @@
  */
 export { SqlMasker, type MaskResult } from "./engine.js";
 export { rehydrate } from "./rehydrate.js";
+export {
+  scrubLiterals,
+  type LiteralMapping,
+  type LiteralScrubResult,
+} from "./literals.js";
 export { SessionMap } from "./session.js";
 export { SqlglotWorker, type SqlglotWorkerOptions } from "./parser/sqlglot.js";
 export type { SqlParser, Renames } from "./parser/types.js";

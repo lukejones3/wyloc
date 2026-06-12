@@ -35,7 +35,7 @@ export interface Classification {
 }
 
 /** What an identifier was classified as, for the session map. */
-export type IdentifierKind = "table" | "schema" | "column" | "alias";
+export type IdentifierKind = "table" | "schema" | "column" | "alias" | "literal";
 
 /** One real→mask mapping recorded in the session. */
 export interface MaskEntry {

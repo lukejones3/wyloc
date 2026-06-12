@@ -199,6 +199,77 @@ async function main(): Promise<void> {
     check("[passthrough] unknown text unchanged", masker.rehydrate(unknown, r.session) === unknown);
   }
 
+  // ====================================================================
+  // PHASE A — LITERAL / VALUE SCRUBBING (via @wyloc/detector)
+  // ====================================================================
+  console.log("══ Phase A: literal/value scrubbing ══════════════════════");
+
+  // ---- org blocklist substrings (e.g. the federal-staffing list) ----
+  {
+    const grp = "[blocklist]";
+    const m2 = new SqlMasker(
+      resolveConfig({ sensitiveValueSubstrings: ["booz allen", "leidos", "northrop grumman"] }),
+      worker,
+    );
+    const r = await m2.mask(LANDER_RAW);
+    const m = r.masked;
+    check(`${grp} 'booz allen' redacted`, !/booz allen/i.test(m));
+    check(`${grp} 'leidos' redacted`, !/leidos/i.test(m));
+    check(`${grp} 'northrop grumman' redacted`, !/northrop grumman/i.test(m));
+    check(`${grp} non-listed 'saic' literal preserved`, /'saic'/.test(m));
+    check(`${grp} scrubbedLiterals records it`, r.scrubbedLiterals.includes("booz allen"));
+    check(`${grp} redaction token emitted`, /wyloc_blocked_/.test(m));
+    // identifier masking still works alongside literal scrubbing
+    check(`${grp} identifiers still masked`, !has(m, "job_postings") && !/ghost/i.test(m));
+    const back = m2.rehydrate(m, r.session);
+    check(`${grp} rehydrate restores 'booz allen'`, /booz allen/i.test(back) && !/wyloc_blocked_/.test(back));
+  }
+
+  // ---- detector-found secret embedded in a literal ----
+  {
+    const grp = "[secret-literal]";
+    const sql =
+      "SELECT id FROM logs WHERE dsn = 'postgres://admin:s3cr3t@prod-db.acme.io:5432/billing';";
+    const r = await masker.mask(sql);
+    const m = r.masked;
+    check(`${grp} real secret host/pw absent`, !has(m, "s3cr3t") && !has(m, "prod-db.acme.io"));
+    check(`${grp} a literal was scrubbed`, r.scrubbedLiterals.length >= 1);
+    const back = masker.rehydrate(m, r.session);
+    check(`${grp} rehydrate restores the secret`, has(back, "prod-db.acme.io"));
+  }
+
+  // ---- PII pattern (email) ----
+  {
+    const grp = "[pii]";
+    const m2 = new SqlMasker(
+      resolveConfig({ sensitiveValuePatterns: [/[\w.+-]+@[\w.-]+\.\w+/] }),
+      worker,
+    );
+    const r = await m2.mask("SELECT id FROM users WHERE email = 'jane.doe@acme.com';");
+    const m = r.masked;
+    check(`${grp} email redacted`, !/jane\.doe@acme\.com/.test(m) && /wyloc_redacted_/.test(m));
+    check(`${grp} scrubbedLiterals records email`, r.scrubbedLiterals.includes("jane.doe@acme.com"));
+    const back = m2.rehydrate(m, r.session);
+    check(`${grp} rehydrate restores email`, has(back, "jane.doe@acme.com"));
+  }
+
+  // ---- default: benign literals are left alone ----
+  {
+    const r = await masker.mask(NESTED_SUBQUERY);
+    check("[default-scrub] benign literals untouched", r.scrubbedLiterals.length === 0);
+  }
+
+  // ---- toggle: scrubLiterals=false disables the pass ----
+  {
+    const m2 = new SqlMasker(
+      resolveConfig({ scrubLiterals: false, sensitiveValueSubstrings: ["booz allen"] }),
+      worker,
+    );
+    const r = await m2.mask(LANDER_RAW);
+    check("[scrub-off] disabled → blocklist literal remains",
+      /booz allen/i.test(r.masked) && r.scrubbedLiterals.length === 0);
+  }
+
   worker.close();
 
   // ---- report ----

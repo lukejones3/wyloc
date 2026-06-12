@@ -14,6 +14,9 @@
     }
   },
   "files": ["dist", "python"],
+  "dependencies": {
+    "@wyloc/detector": "*"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

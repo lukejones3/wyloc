@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import type { DetectorConfig } from "@wyloc/detector";
 import type { Dialect } from "./types.js";
 
 /**
@@ -34,6 +35,18 @@ export interface MaskerConfig {
   proprietaryColumns: readonly (string | RegExp)[];
   /** Also auto-mask any column whose name contains a derived concept token. */
   autoMaskConceptColumns: boolean;
+
+  // --- literal/value scrubbing (a separate AST pass, uses @wyloc/detector) ---
+  /** Master toggle for the literal-scrubbing pass. */
+  scrubLiterals: boolean;
+  /** Run the detector over each string literal and mock any secrets it finds. */
+  scrubSecretsInLiterals: boolean;
+  /** Org blocklist: any literal CONTAINING one of these (case-insensitive) is redacted. */
+  sensitiveValueSubstrings: readonly string[];
+  /** PII/value regexes: any literal matching one is redacted (e.g. email, SSN). */
+  sensitiveValuePatterns: readonly RegExp[];
+  /** Config passed through to the detector's scan(). */
+  detectorConfig: Partial<DetectorConfig>;
 
   // --- knobs ---
   minConceptTokenLength: number;
@@ -106,6 +119,11 @@ export function resolveConfig(input: MaskerConfigInput = {}): MaskerConfig {
     stopTokens: input.stopTokens ?? DEFAULT_STOP_TOKENS,
     proprietaryColumns: input.proprietaryColumns ?? [],
     autoMaskConceptColumns: input.autoMaskConceptColumns ?? true,
+    scrubLiterals: input.scrubLiterals ?? true,
+    scrubSecretsInLiterals: input.scrubSecretsInLiterals ?? true,
+    sensitiveValueSubstrings: input.sensitiveValueSubstrings ?? [],
+    sensitiveValuePatterns: input.sensitiveValuePatterns ?? [],
+    detectorConfig: input.detectorConfig ?? {},
     minConceptTokenLength: input.minConceptTokenLength ?? 4,
     hashLength: input.hashLength ?? 6,
     sessionSalt: input.sessionSalt ?? "",

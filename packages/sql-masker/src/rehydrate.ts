@@ -5,24 +5,46 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Reverse a masked LLM response back to real identifiers.
+ * Reverse a masked LLM response back to real identifiers and values.
  *
- * Only tokens this session actually created are reversed; everything else —
- * including identifiers the model invented (e.g. an index `ix_fact_aa11` or a
- * column it proposes) — passes through untouched. Identifier-boundary matching
- * (no `[A-Za-z0-9_]` on either side) means a mask embedded inside a longer
- * invented name (`ix_<mask>_feed`) is deliberately left masked, per spec: we
- * reverse exact tokens we own, never reach into names we don't.
+ * Two channels, because they have different shapes:
  *
- * Pure and parser-free: works on arbitrary text (prose + SQL), so it tolerates
- * the non-parseable mix an LLM returns.
+ *  • Literal values (kind "literal") — secrets/PII/blocklist values, which may
+ *    contain spaces and punctuation. Reversed by plain longest-first replace.
+ *
+ *  • Identifier masks (tables/schemas/columns/aliases) — reversed with
+ *    identifier-boundary matching, so a mask embedded inside an identifier the
+ *    model invented (e.g. an index `ix_<mask>_feed`, a proposed column) is left
+ *    masked, per spec: reverse exact tokens we own, never reach into names we
+ *    don't.
+ *
+ * Only tokens this session created are reversed; everything else passes through.
+ * Pure and parser-free, so it tolerates the prose+SQL mix an LLM returns.
  */
 export function rehydrate(text: string, session: SessionMap): string {
-  const masks = session.masksByLengthDesc();
-  if (masks.length === 0) return text;
-  const pattern = new RegExp(
-    `(?<![A-Za-z0-9_])(?:${masks.map(escapeRegex).join("|")})(?![A-Za-z0-9_])`,
-    "g",
-  );
-  return text.replace(pattern, (m) => session.realFor(m) ?? m);
+  const entries = session.entries();
+  if (entries.length === 0) return text;
+  let out = text;
+
+  // 1. Literal values — plain replace, longest mask first.
+  const literals = entries
+    .filter((e) => e.kind === "literal")
+    .sort((a, b) => b.mask.length - a.mask.length);
+  for (const e of literals) {
+    if (e.mask.length > 0) out = out.split(e.mask).join(e.real);
+  }
+
+  // 2. Identifier masks — boundary-aware alternation.
+  const ids = entries.filter((e) => e.kind !== "literal");
+  if (ids.length > 0) {
+    const map = new Map(ids.map((e) => [e.mask, e.real]));
+    const masks = ids.map((e) => e.mask).sort((a, b) => b.length - a.length);
+    const pattern = new RegExp(
+      `(?<![A-Za-z0-9_])(?:${masks.map(escapeRegex).join("|")})(?![A-Za-z0-9_])`,
+      "g",
+    );
+    out = out.replace(pattern, (m) => map.get(m) ?? m);
+  }
+
+  return out;
 }
