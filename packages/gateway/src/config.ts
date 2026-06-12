@@ -55,6 +55,15 @@ export interface GatewayConfig {
    * any verbosity. This only toggles the non-sensitive operational lines.
    */
   verbose: boolean;
+  /**
+   * Mask proprietary SQL identifiers + scrub sensitive literals in outbound
+   * SQL via @wyloc/sql-masker, in addition to detector secret-swapping.
+   * Default OFF. Requires a Python3 + sqlglot worker; if it can't start, the
+   * gateway logs once and falls back to detector-only behavior.
+   */
+  maskSql: boolean;
+  /** SQL dialect handed to the masker's parser. */
+  sqlDialect: string;
 }
 
 function envBool(name: string, fallback: boolean): boolean {
@@ -97,5 +106,7 @@ export function loadConfig(): GatewayConfig {
     onDetect,
     injectSystemPrompt: envBool("WYLOC_INJECT_SYSTEM_PROMPT", true),
     verbose: envBool("WYLOC_VERBOSE", true),
+    maskSql: envBool("WYLOC_MASK_SQL", false),
+    sqlDialect: envStr("WYLOC_SQL_DIALECT", "postgres"),
   };
 }

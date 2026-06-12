@@ -12,6 +12,7 @@ import type { GatewayConfig } from "./config.js";
 import { Logger } from "./logger.js";
 import { forward, sendGatewayError, type ProxyContext } from "./proxy.js";
 import { SessionStore } from "./session.js";
+import { SqlMaskHandle } from "./sql-mask.js";
 
 /** Endpoints we explicitly expose in Anthropic Messages format. */
 const MESSAGES_PATH = "/v1/messages";
@@ -23,7 +24,20 @@ export function createGateway(config: GatewayConfig): Server {
   // real↔mock mappings in memory only; never persisted, never logged.
   const store = new SessionStore();
 
-  return createServer((req, res) => {
+  // Optional SQL-masking worker (off unless config.maskSql). Spawned once and
+  // reused; reports readiness asynchronously and degrades gracefully.
+  const sqlMask = new SqlMaskHandle(config, store, log);
+  if (config.maskSql) {
+    void sqlMask.ready().then((ok) =>
+      log.info(
+        ok
+          ? "SQL masking enabled (sqlglot worker ready)"
+          : "SQL masking requested but the sqlglot worker is unavailable — falling back to detector-only",
+      ),
+    );
+  }
+
+  const server = createServer((req, res) => {
     // Parse just the path; querystrings are forwarded as-is via req.url.
     const rawUrl = req.url ?? "/";
     const path = rawUrl.split("?")[0] ?? "/";
@@ -46,6 +60,7 @@ export function createGateway(config: GatewayConfig): Server {
       path: rawUrl,
       store,
       inspect: isMessages || isCountTokens,
+      sqlMask: config.maskSql ? sqlMask : null,
     };
 
     if (isMessages || isCountTokens || path.startsWith("/v1/")) {
@@ -62,4 +77,8 @@ export function createGateway(config: GatewayConfig): Server {
 
     sendGatewayError(res, 404, `No route for ${path}.`);
   });
+
+  // Tear down the worker subprocess when the server closes.
+  server.on("close", () => sqlMask.close());
+  return server;
 }

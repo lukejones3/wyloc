@@ -38,6 +38,11 @@ function main(): void {
     process.on(sig, () => {
       log.info(`received ${sig}, shutting down.`);
       server.close(() => process.exit(0));
+      // Destroy lingering connections (e.g. an open SSE stream) so close()
+      // completes promptly and the port is released; the SQL worker child
+      // then exits on stdin EOF. Fallback hard-exit guarantees teardown.
+      server.closeAllConnections?.();
+      setTimeout(() => process.exit(0), 500).unref();
     });
   }
 }

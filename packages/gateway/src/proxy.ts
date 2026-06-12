@@ -22,6 +22,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./session.js";
+import type { SqlMaskHandle } from "./sql-mask.js";
 import { swapRequest } from "./swap-request.js";
 import { rehydrateSse } from "./sse-rehydrate.js";
 import {
@@ -42,6 +43,12 @@ export interface ProxyContext {
    * and swap. False for opaque/forwarded paths (no rewrite attempted).
    */
   inspect: boolean;
+  /**
+   * Optional SQL-masking handle. When present and enabled, outbound SQL is
+   * masked before the detector swap. Null when maskSql is off or the worker
+   * couldn't start (detector swap still runs).
+   */
+  sqlMask: SqlMaskHandle | null;
 }
 
 /**
@@ -52,7 +59,7 @@ export async function forward(
   res: ServerResponse,
   ctx: ProxyContext,
 ): Promise<void> {
-  const { config, log, path, store, inspect } = ctx;
+  const { config, log, path, store, inspect, sqlMask } = ctx;
   const started = Date.now();
 
   // 1. Buffer the request body.
@@ -64,7 +71,22 @@ export async function forward(
   // rewritten bytes. For all other paths we forward untouched.
   let outboundBody = reqBody;
   if (inspect) {
-    const outcome = swapRequest(reqBody, config, store);
+    // SQL-masking pass (optional): mask proprietary identifiers + scrub
+    // sensitive literals in any SQL, BEFORE the detector swap runs. Mappings
+    // are folded into the same store, so the response rehydrates them too.
+    let bodyForSwap = reqBody;
+    if (sqlMask) {
+      const sqlOutcome = await sqlMask.maskBody(reqBody, store);
+      bodyForSwap = sqlOutcome.body;
+      if (sqlOutcome.blocks > 0) {
+        log.debug(
+          `sql-mask: ${sqlOutcome.blocks} SQL block(s), ` +
+            `${sqlOutcome.masked} identifier/value(s) masked in ${path}`,
+        );
+      }
+    }
+
+    const outcome = swapRequest(bodyForSwap, config, store);
 
     if (outcome.detected > 0) {
       // Metadata-only logging (gated by WYLOC_VERBOSE / DEBUG). NEVER logs

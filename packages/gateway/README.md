@@ -39,6 +39,18 @@ straight through to the upstream. The gateway never sees a Wyloc account.
   A verbatim-echo directive is injected into `system` (toggle:
   `WYLOC_INJECT_SYSTEM_PROMPT`, default on) so mocks round-trip reliably.
 
+- **Phase 4 — SQL identifier masking + literal scrubbing** ✅ (opt-in,
+  `WYLOC_MASK_SQL=true`). Before the detector swap, SQL found in prompt text
+  (```sql fences **and** a bare block that parses) is run through
+  [`@wyloc/sql-masker`](../sql-masker): proprietary table/schema/column
+  identifiers are replaced with semantic-preserving masks
+  (`job_postings → postings_<hash>`) and sensitive literals are scrubbed,
+  while query-local structure (CTEs, aliases) is preserved so the model still
+  gives good advice. The mask pairs fold into the same session store, so the
+  response stream rehydrates them alongside `WYLOC_MOCK_` tokens. Needs a
+  Python3 + `sqlglot` worker; if it can't start, the gateway logs once and
+  falls back to detector-only (no request ever fails for this reason).
+
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).
 
@@ -78,7 +90,7 @@ curl -s http://127.0.0.1:8787/healthz
 ### Automated tests (no key needed)
 
 ```bash
-npm test --workspace @wyloc/gateway   # runs all four below
+npm test --workspace @wyloc/gateway   # runs all five below
 ```
 
 - `test-rehydrate-unit.mjs` — token-boundary engine: mocks split across
@@ -94,6 +106,10 @@ npm test --workspace @wyloc/gateway   # runs all four below
   chunks**; asserts the client receives the **real** secret, no mock
   survives, `input_json_delta` is byte-intact, the directive was injected,
   and the event sequence/framing is preserved.
+- `test-sql-mask.mjs` — Phase 4 (`WYLOC_MASK_SQL=true`): a prompt with a
+  proprietary SQL block + a DB-URL secret literal is masked/scrubbed before
+  forwarding (no identifier or secret reaches upstream), and the masked table
+  echoed back by the fake upstream rehydrates to its real name in the stream.
 
 ## Configuration
 
@@ -107,6 +123,8 @@ later becomes enterprise central policy). Nothing is hardcoded.
 | `WYLOC_UPSTREAM_BASE_URL` | `https://api.anthropic.com` | Upstream API origin |
 | `WYLOC_ON_DETECT` | `swap` | `swap` (replace + forward) or `block` (reject) |
 | `WYLOC_INJECT_SYSTEM_PROMPT` | `true` | Inject the verbatim-echo `system` directive |
+| `WYLOC_MASK_SQL` | `false` | Mask SQL identifiers + scrub literals via @wyloc/sql-masker (needs Python3 + sqlglot) |
+| `WYLOC_SQL_DIALECT` | `postgres` | SQL dialect for the masker's parser (postgres/snowflake/bigquery/…) |
 | `WYLOC_VERBOSE` | `true` | Operational logging (never logs secrets) |
 
 ## Privacy model

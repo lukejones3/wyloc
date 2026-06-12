@@ -20,7 +20,7 @@
  * buffers the whole response — at most a partial mock token is held.
  */
 
-import type { SwapMapping } from "@wyloc/detector";
+import type { MockMapping } from "./session.js";
 import { RehydrationStream } from "./rehydrate-stream.js";
 
 /** Pull the concatenated `data:` payload out of one raw SSE event. */
@@ -51,7 +51,7 @@ function makeTextDelta(index: number, text: string): string {
  */
 export async function* rehydrateSse(
   source: AsyncIterable<Uint8Array>,
-  mappings: readonly SwapMapping[],
+  mappings: readonly MockMapping[],
 ): AsyncGenerator<Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();

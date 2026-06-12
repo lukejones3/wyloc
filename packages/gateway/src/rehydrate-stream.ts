@@ -28,7 +28,7 @@
  * already-flushed raw text.
  */
 
-import type { SwapMapping } from "@wyloc/detector";
+import type { MockMapping } from "./session.js";
 
 const MARKER = "WYLOC_MOCK_";
 /** Characters that can appear in a mock after the marker (TYPE + _ + ID). */
@@ -41,23 +41,37 @@ const CTX = 16;
  * `WYLOC_MOCK_` token, and must therefore be held back. Returns `s.length`
  * when nothing needs holding (the whole string is safe to flush).
  */
-export function holdPoint(s: string): number {
-  // Case A: a marker occurrence whose token-run reaches the end of `s`
-  // with no terminator yet — it could still grow, so hold from there.
+export function holdPoint(s: string, mocks?: readonly string[]): number {
+  let hold = s.length;
+
+  // Case A: a marker occurrence whose token-run reaches the end of `s` with
+  // no terminator yet — it could still grow, so hold from there.
   const idx = s.lastIndexOf(MARKER);
-  if (idx !== -1) {
-    const rest = s.slice(idx + MARKER.length);
-    if (TOKEN_CHARS.test(rest)) return idx;
-    // else: this occurrence is terminated (complete); fall through to
-    // check for a *separate* trailing partial of the marker itself.
+  if (idx !== -1 && TOKEN_CHARS.test(s.slice(idx + MARKER.length))) {
+    hold = Math.min(hold, idx);
   }
-  // Case B: the longest suffix of `s` that is a prefix of the marker
+  // Case B: the longest suffix of `s` that is a prefix of the marker itself
   // (the marker hasn't fully arrived yet), e.g. "...WYLOC_MO".
-  const max = Math.min(MARKER.length - 1, s.length);
-  for (let k = max; k >= 1; k--) {
-    if (s.endsWith(MARKER.slice(0, k))) return s.length - k;
+  for (let k = Math.min(MARKER.length - 1, s.length); k >= 1; k--) {
+    if (s.endsWith(MARKER.slice(0, k))) {
+      hold = Math.min(hold, s.length - k);
+      break;
+    }
   }
-  return s.length;
+  // Case C: the longest suffix of `s` that is a proper prefix of any known
+  // mock — so a split SQL mask (`mart_a1` → `mart_a1b2c3`) is held until
+  // complete. No-op when `mocks` is omitted (preserves the 1-arg behavior).
+  if (mocks) {
+    for (const mock of mocks) {
+      for (let k = Math.min(mock.length - 1, s.length); k >= 1; k--) {
+        if (s.endsWith(mock.slice(0, k))) {
+          hold = Math.min(hold, s.length - k);
+          break;
+        }
+      }
+    }
+  }
+  return hold;
 }
 
 /** Browser-parity identifier-position heuristic. */
@@ -79,9 +93,13 @@ function isIdentifierContext(before: string, after: string): boolean {
 function rehydrateChunk(
   leftCtx: string,
   chunk: string,
-  mappings: readonly SwapMapping[],
+  mappings: readonly MockMapping[],
 ): string {
-  if (chunk.indexOf(MARKER) === -1) return chunk; // fast path: no mocks
+  // Fast path: skip only when there is no marker AND no non-marker (SQL) mock
+  // that could appear without it. SQL masks keep their semantic shape, so they
+  // do not carry the WYLOC_MOCK_ marker and must not be gated on it.
+  const hasSqlMocks = mappings.some((m) => !m.mock.startsWith(MARKER));
+  if (chunk.indexOf(MARKER) === -1 && !hasSqlMocks) return chunk;
   const combined = leftCtx + chunk;
   const gate = leftCtx.length;
   let result = "";
@@ -90,7 +108,7 @@ function rehydrateChunk(
   while (i < combined.length) {
     // Find the earliest mock occurrence at or after i (longest on ties).
     let bestAt = -1;
-    let bestMock: SwapMapping | null = null;
+    let bestMock: MockMapping | null = null;
     for (const m of mappings) {
       if (!m.mock) continue;
       const at = combined.indexOf(m.mock, i);
@@ -135,12 +153,16 @@ export class RehydrationStream {
   /** Last <=CTX raw chars already flushed, for identifier context. */
   private leftCtx = "";
 
-  constructor(private readonly mappings: readonly SwapMapping[]) {}
+  private readonly mockStrings: readonly string[];
+
+  constructor(private readonly mappings: readonly MockMapping[]) {
+    this.mockStrings = mappings.map((m) => m.mock);
+  }
 
   /** Feed text from a `text_delta`; returns rehydrated text to emit now. */
   pushText(text: string): string {
     this.pending += text;
-    const hp = holdPoint(this.pending);
+    const hp = holdPoint(this.pending, this.mockStrings);
     const flushRaw = this.pending.slice(0, hp);
     this.pending = this.pending.slice(hp);
     return this.emit(flushRaw);
