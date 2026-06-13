@@ -1,25 +1,35 @@
 # @wyloc/gateway
 
-A local proxy that sits between **Claude Code** (and later other CLI/IDE
-clients that support a custom base URL) and the Anthropic API. It detects
-secrets in outbound prompts and swaps them for `WYLOC_MOCK_` placeholders
-**before they leave the machine**, then rehydrates the real values inline
-in the streamed response — the same protection as the Wyloc browser
-extension, reusing the same [`@wyloc/detector`](../detector) engine.
+A local proxy that sits between a base-URL-configurable LLM client and the
+upstream API. It detects secrets in outbound prompts and swaps them for
+`WYLOC_MOCK_` placeholders **before they leave the machine**, then rehydrates
+the real values inline in the streamed response — the same protection as the
+Wyloc browser extension, reusing the same [`@wyloc/detector`](../detector) engine.
+
+**Two providers, one core.** The masking/detector/SQL/rehydration engine is
+wire-format-agnostic; a thin per-provider adapter (`src/adapters/`) handles each
+format. Routing is by endpoint:
+
+| Client | Point it with | Endpoint | Forwarded to |
+| --- | --- | --- | --- |
+| **Claude Code** | `ANTHROPIC_BASE_URL` | `/v1/messages` | `api.anthropic.com` |
+| **Codex CLI** (& OpenAI-compatible) | `OPENAI_BASE_URL` | `/v1/chat/completions` | `api.openai.com` |
+
+Auth is **relayed, never replaced** — `x-api-key` (Anthropic) and
+`Authorization: Bearer` (OpenAI) each pass straight through to the matching
+upstream, and `Host` is set per-provider.
 
 ```
- claude  ──►  ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+ claude / codex ─►  *_BASE_URL=http://127.0.0.1:8787
                      │
                      ▼
             ┌──────────────────┐   real→mock swap (user text only)
-            │  @wyloc/gateway  │ ──────────────────────────────────►  api.anthropic.com
-            │  (this package)  │ ◄──────────────────────────────────  (your real key)
+            │  @wyloc/gateway  │ ──────────────────►  api.anthropic.com / api.openai.com
+            │   adapter seam   │ ◄──────────────────  (your real key, relayed)
             └──────────────────┘   mock→real rehydrate (SSE stream)
 ```
 
-Credentials are **relayed, never replaced**: your real `x-api-key` /
-`Authorization`, `anthropic-version`, and `anthropic-beta` headers pass
-straight through to the upstream. The gateway never sees a Wyloc account.
+The gateway never sees a Wyloc account — it only relays your own credentials.
 
 ## Status
 
@@ -50,6 +60,14 @@ straight through to the upstream. The gateway never sees a Wyloc account.
   response stream rehydrates them alongside `WYLOC_MOCK_` tokens. Needs a
   Python3 + `sqlglot` worker; if it can't start, the gateway logs once and
   falls back to detector-only (no request ever fails for this reason).
+- **Phase 5 — OpenAI / Codex support** ✅. A provider-adapter seam
+  (`src/adapters/`) factors the wire-format-specific logic — `AnthropicAdapter`
+  (behavior-preserving) and `OpenAIAdapter` — behind one interface; both call
+  the **same** detector/SQL/rehydration core and session store. The OpenAI
+  adapter masks `messages[]` text (system/developer/user/assistant; skips
+  `role:"tool"` and never touches `tool_calls`), appends the directive to the
+  system message, and rehydrates `choices[].delta.content` from the
+  `chat.completion.chunk` stream. `WYLOC_MASK_SQL` works on both providers.
 
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).
@@ -74,11 +92,13 @@ once at Claude Code startup, so set it and launch a **fresh** `claude` —
 changing it mid-session does nothing.
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude
+ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude     # Claude Code
+OPENAI_BASE_URL=http://127.0.0.1:8787 codex         # Codex CLI (chat/completions)
 ```
 
-Use your real Anthropic key as normal. In Phase 1 everything behaves
-exactly like talking to Anthropic directly; the gateway just relays.
+Use your real provider key as normal — the gateway just relays it. (Codex reads
+`OPENAI_BASE_URL` once at startup, same caveat as `ANTHROPIC_BASE_URL`; for a
+custom provider entry use `[model_providers.<id>]` with `wire_api = "chat"`.)
 
 ### Health check (no key needed)
 
@@ -90,7 +110,7 @@ curl -s http://127.0.0.1:8787/healthz
 ### Automated tests (no key needed)
 
 ```bash
-npm test --workspace @wyloc/gateway   # runs all five below
+npm test --workspace @wyloc/gateway   # runs all six below
 ```
 
 - `test-rehydrate-unit.mjs` — token-boundary engine: mocks split across
@@ -110,6 +130,11 @@ npm test --workspace @wyloc/gateway   # runs all five below
   proprietary SQL block + a DB-URL secret literal is masked/scrubbed before
   forwarding (no identifier or secret reaches upstream), and the masked table
   echoed back by the fake upstream rehydrates to its real name in the stream.
+- `test-openai-mask.mjs` — Phase 5: an OpenAI `/v1/chat/completions` request
+  gets its user text masked (SQL + AWS key + DB-URL) and the directive appended
+  to the system message, while assistant `tool_calls` and a `role:"tool"`
+  message stay byte-intact; the `chat.completion.chunk` stream rehydrates
+  `delta.content` (both a semantic SQL mask and a `WYLOC_MOCK_` token).
 
 ## Configuration
 
@@ -120,7 +145,8 @@ later becomes enterprise central policy). Nothing is hardcoded.
 | --- | --- | --- |
 | `WYLOC_GATEWAY_PORT` | `8787` | Port the proxy listens on |
 | `WYLOC_GATEWAY_HOST` | `127.0.0.1` | Bind address (keep on loopback) |
-| `WYLOC_UPSTREAM_BASE_URL` | `https://api.anthropic.com` | Upstream API origin |
+| `WYLOC_UPSTREAM_BASE_URL` | `https://api.anthropic.com` | Anthropic upstream origin (`/v1/messages*`) |
+| `WYLOC_OPENAI_UPSTREAM_BASE_URL` | `https://api.openai.com` | OpenAI upstream origin (`/v1/chat/completions`) |
 | `WYLOC_ON_DETECT` | `swap` | `swap` (replace + forward) or `block` (reject) |
 | `WYLOC_INJECT_SYSTEM_PROMPT` | `true` | Inject the verbatim-echo `system` directive |
 | `WYLOC_MASK_SQL` | `false` | Mask SQL identifiers + scrub literals via @wyloc/sql-masker (needs Python3 + sqlglot) |

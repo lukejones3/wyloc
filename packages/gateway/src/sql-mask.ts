@@ -20,6 +20,7 @@
  */
 
 import { SqlMasker, SqlglotWorker, resolveConfig } from "@wyloc/sql-masker";
+import type { ProviderAdapter } from "./adapters/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./session.js";
@@ -38,15 +39,6 @@ const SQL_START = /^\s*(with|select|insert|update|delete|create|explain|merge|al
 
 function passthrough(raw: Buffer): SqlMaskBodyOutcome {
   return { body: raw, processed: false, blocks: 0, masked: 0 };
-}
-
-function isTextBlock(b: unknown): b is { type: "text"; text: string } {
-  return (
-    b !== null &&
-    typeof b === "object" &&
-    (b as { type?: unknown }).type === "text" &&
-    typeof (b as { text?: unknown }).text === "string"
-  );
 }
 
 /** Owns the (single, reused) sqlglot worker + masker for the gateway process. */
@@ -143,11 +135,15 @@ export class SqlMaskHandle {
   }
 
   /**
-   * Walk a Messages-format body, mask SQL in system + user text blocks, and
-   * fold the mappings into `store`. Same text surfaces as the detector pass;
-   * tool_use / tool_result / images / structure are never touched.
+   * Walk a request body via `adapter`, mask SQL in the same text surfaces the
+   * detector pass uses, and fold the mappings into `store`. Tool-call structure
+   * is never touched (the adapter's walk skips it).
    */
-  async maskBody(raw: Buffer, store: SessionStore): Promise<SqlMaskBodyOutcome> {
+  async maskBody(
+    adapter: ProviderAdapter,
+    raw: Buffer,
+    store: SessionStore,
+  ): Promise<SqlMaskBodyOutcome> {
     if (!this.config.maskSql) return passthrough(raw);
     if (!(await this.readyPromise)) {
       if (!this.loggedDisabled) {
@@ -168,32 +164,12 @@ export class SqlMaskHandle {
 
     let blocks = 0;
     let masked = 0;
-    const apply = async (text: string): Promise<string> => {
+    await adapter.forEachText(parsed, async (text) => {
       const r = await this.maskText(text, store);
       blocks += r.blocks;
       masked += r.masked;
       return r.text;
-    };
-
-    const obj = parsed as { system?: unknown; messages?: unknown };
-
-    if (typeof obj.system === "string") {
-      obj.system = await apply(obj.system);
-    } else if (Array.isArray(obj.system)) {
-      for (const b of obj.system) if (isTextBlock(b)) b.text = await apply(b.text);
-    }
-
-    if (Array.isArray(obj.messages)) {
-      for (const msg of obj.messages) {
-        if (msg === null || typeof msg !== "object") continue;
-        const content = (msg as { content?: unknown }).content;
-        if (typeof content === "string") {
-          (msg as { content: unknown }).content = await apply(content);
-        } else if (Array.isArray(content)) {
-          for (const b of content) if (isTextBlock(b)) b.text = await apply(b.text);
-        }
-      }
-    }
+    });
 
     if (blocks === 0) return { ...passthrough(raw), processed: true };
     return {

@@ -14,7 +14,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx test-rehydrate-unit.mjs && node test-passthrough.mjs && node test-swap.mjs && node test-roundtrip.mjs && node test-sql-mask.mjs"
+    "test": "node --import tsx test-rehydrate-unit.mjs && node test-passthrough.mjs && node test-swap.mjs && node test-roundtrip.mjs && node test-sql-mask.mjs && node test-openai-mask.mjs"
   },
   "dependencies": {
     "@wyloc/detector": "*",

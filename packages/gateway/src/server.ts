@@ -13,16 +13,30 @@ import { Logger } from "./logger.js";
 import { forward, sendGatewayError, type ProxyContext } from "./proxy.js";
 import { SessionStore } from "./session.js";
 import { SqlMaskHandle } from "./sql-mask.js";
+import { AnthropicAdapter } from "./adapters/anthropic.js";
+import { OpenAIAdapter } from "./adapters/openai.js";
 
-/** Endpoints we explicitly expose in Anthropic Messages format. */
+/** Anthropic Messages endpoints (masked). */
 const MESSAGES_PATH = "/v1/messages";
 const COUNT_TOKENS_PATH = "/v1/messages/count_tokens";
+/** OpenAI Chat Completions endpoint (masked). */
+const CHAT_PATH = "/v1/chat/completions";
+/** Other OpenAI-only paths — forwarded to OpenAI, not masked (unambiguous). */
+const OPENAI_PASSTHROUGH_PATHS = new Set([
+  "/v1/responses",
+  "/v1/completions",
+  "/v1/embeddings",
+  "/v1/moderations",
+]);
 
 export function createGateway(config: GatewayConfig): Server {
   const log = Logger.from(config);
   // One ephemeral store for the lifetime of this gateway process. Holds
   // real↔mock mappings in memory only; never persisted, never logged.
   const store = new SessionStore();
+
+  const anthropicAdapter = new AnthropicAdapter(config.upstreamBaseUrl);
+  const openaiAdapter = new OpenAIAdapter(config.openaiUpstreamBaseUrl);
 
   // Optional SQL-masking worker (off unless config.maskSql). Spawned once and
   // reused; reports readiness asynchronously and degrades gracefully.
@@ -49,21 +63,41 @@ export function createGateway(config: GatewayConfig): Server {
       return;
     }
 
-    // The two Messages endpoints carry user text we inspect/rewrite.
-    // Everything else (model list, etc.) is still forwarded so the gateway
-    // is a drop-in base URL, but is never scanned or rewritten.
+    // Route by endpoint to the right wire-format adapter + upstream.
+    //   /v1/messages*           → Anthropic adapter + api.anthropic.com (masked)
+    //   /v1/chat/completions    → OpenAI adapter    + api.openai.com    (masked)
+    //   other OpenAI-only paths → OpenAI upstream, forwarded (not masked)
+    //   any other /v1/*         → Anthropic upstream, forwarded (current behavior)
     const isMessages = path === MESSAGES_PATH;
     const isCountTokens = path === COUNT_TOKENS_PATH;
+    const isChat = path === CHAT_PATH;
+    const isOpenAiOther = OPENAI_PASSTHROUGH_PATHS.has(path);
+
+    let adapter = anthropicAdapter as ProxyContext["adapter"];
+    let upstreamBaseUrl = config.upstreamBaseUrl;
+    let inspect = isMessages || isCountTokens;
+    if (isChat) {
+      adapter = openaiAdapter;
+      upstreamBaseUrl = config.openaiUpstreamBaseUrl;
+      inspect = true;
+    } else if (isOpenAiOther) {
+      adapter = openaiAdapter;
+      upstreamBaseUrl = config.openaiUpstreamBaseUrl;
+      inspect = false;
+    }
+
     const ctx: ProxyContext = {
       config,
       log,
       path: rawUrl,
       store,
-      inspect: isMessages || isCountTokens,
+      inspect,
+      adapter,
+      upstreamBaseUrl,
       sqlMask: config.maskSql ? sqlMask : null,
     };
 
-    if (isMessages || isCountTokens || path.startsWith("/v1/")) {
+    if (isMessages || isCountTokens || isChat || isOpenAiOther || path.startsWith("/v1/")) {
       void forward(req, res, ctx).catch((err) => {
         log.error(`unhandled error for ${path}`, err);
         if (!res.headersSent) {

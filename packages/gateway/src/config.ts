@@ -26,11 +26,13 @@ export interface GatewayConfig {
   /** Address to bind. Loopback by default — never expose this off-box. */
   host: string;
   /**
-   * Upstream Anthropic API origin. Requests are forwarded to
-   * `${upstreamBaseUrl}${path}` with the caller's own credentials. The
+   * Upstream Anthropic API origin (for /v1/messages*). Requests are forwarded
+   * to `${upstreamBaseUrl}${path}` with the caller's own credentials. The
    * gateway relays auth, it never substitutes it.
    */
   upstreamBaseUrl: string;
+  /** Upstream OpenAI API origin (for /v1/chat/completions and other OpenAI paths). */
+  openaiUpstreamBaseUrl: string;
   /**
    * Detector tuning passed verbatim to `scan()`. Controls which patterns
    * are active (via `suppressedRuleIds`), entropy thresholds, allowlist,
@@ -97,11 +99,16 @@ export function loadConfig(): GatewayConfig {
     "WYLOC_UPSTREAM_BASE_URL",
     "https://api.anthropic.com",
   ).replace(/\/+$/, "");
+  const openaiUpstreamBaseUrl = envStr(
+    "WYLOC_OPENAI_UPSTREAM_BASE_URL",
+    "https://api.openai.com",
+  ).replace(/\/+$/, "");
 
   return {
     port: envInt("WYLOC_GATEWAY_PORT", 8787),
     host: envStr("WYLOC_GATEWAY_HOST", "127.0.0.1"),
     upstreamBaseUrl,
+    openaiUpstreamBaseUrl,
     detector: {},
     onDetect,
     injectSystemPrompt: envBool("WYLOC_INJECT_SYSTEM_PROMPT", true),

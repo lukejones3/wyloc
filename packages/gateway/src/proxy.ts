@@ -23,8 +23,8 @@ import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./session.js";
 import type { SqlMaskHandle } from "./sql-mask.js";
-import { swapRequest } from "./swap-request.js";
-import { rehydrateSse } from "./sse-rehydrate.js";
+import type { ProviderAdapter } from "./adapters/types.js";
+import { runDetectorSwap } from "./swap-request.js";
 import {
   buildClientHeaders,
   buildUpstreamHeaders,
@@ -39,10 +39,14 @@ export interface ProxyContext {
   /** Session-scoped real↔mock store (in-memory, never persisted). */
   store: SessionStore;
   /**
-   * Whether this path carries Messages-format user text we should scan
-   * and swap. False for opaque/forwarded paths (no rewrite attempted).
+   * Whether this path carries user text we should scan/mask and whose response
+   * we should rehydrate. False for opaque/forwarded paths.
    */
   inspect: boolean;
+  /** Wire-format adapter for this request (Anthropic / OpenAI). */
+  adapter: ProviderAdapter;
+  /** Upstream origin to forward to for this request's provider. */
+  upstreamBaseUrl: string;
   /**
    * Optional SQL-masking handle. When present and enabled, outbound SQL is
    * masked before the detector swap. Null when maskSql is off or the worker
@@ -59,7 +63,7 @@ export async function forward(
   res: ServerResponse,
   ctx: ProxyContext,
 ): Promise<void> {
-  const { config, log, path, store, inspect, sqlMask } = ctx;
+  const { config, log, path, store, inspect, sqlMask, adapter, upstreamBaseUrl } = ctx;
   const started = Date.now();
 
   // 1. Buffer the request body.
@@ -76,7 +80,7 @@ export async function forward(
     // are folded into the same store, so the response rehydrates them too.
     let bodyForSwap = reqBody;
     if (sqlMask) {
-      const sqlOutcome = await sqlMask.maskBody(reqBody, store);
+      const sqlOutcome = await sqlMask.maskBody(adapter, reqBody, store);
       bodyForSwap = sqlOutcome.body;
       if (sqlOutcome.blocks > 0) {
         log.debug(
@@ -86,7 +90,7 @@ export async function forward(
       }
     }
 
-    const outcome = swapRequest(bodyForSwap, config, store);
+    const outcome = await runDetectorSwap(adapter, bodyForSwap, config, store);
 
     if (outcome.detected > 0) {
       // Metadata-only logging (gated by WYLOC_VERBOSE / DEBUG). NEVER logs
@@ -125,7 +129,7 @@ export async function forward(
   }
 
   // 2. Forward to upstream with the caller's own credentials/headers.
-  const upstreamUrl = `${config.upstreamBaseUrl}${path}`;
+  const upstreamUrl = `${upstreamBaseUrl}${path}`;
   const headers = buildUpstreamHeaders(req.headers);
 
   const method = req.method ?? "POST";
@@ -174,7 +178,7 @@ export async function forward(
   const rehydrate = inspect && isEventStream && store.size > 0;
   const upstreamBody = upstream.body as AsyncIterable<Uint8Array>;
   const outStream = rehydrate
-    ? rehydrateSse(upstreamBody, store.all())
+    ? adapter.rehydrateResponse(upstreamBody, store.all())
     : upstreamBody;
   if (rehydrate) log.debug(`rehydrating SSE response for ${path}`);
 
