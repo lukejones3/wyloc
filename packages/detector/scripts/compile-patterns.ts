@@ -230,7 +230,10 @@ function emitPattern(p: Normalised): string {
     lines.push(`    captureGroup: ${p.captureGroup},`);
   }
   if (p.structuralValidator !== undefined) {
-    lines.push(`    structuralValidator: validators[${JSON.stringify(p.structuralValidator)}],`);
+    // Non-null assertion: the build already verified this key exists in the
+    // registry, and the index signature is `| undefined` under
+    // noUncheckedIndexedAccess.
+    lines.push(`    structuralValidator: validators[${JSON.stringify(p.structuralValidator)}]!,`);
   }
   if (p.requiredContext !== undefined) {
     lines.push(`    requiredContext: ${JSON.stringify(p.requiredContext)},`);

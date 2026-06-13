@@ -138,4 +138,35 @@ export const positiveFixtures: PositiveFixture[] = [
     expectType: "high_entropy_string",
     expectAction: "warn",
   },
+  // --- Structural PII (swap-and-rehydrate; never block) ---
+  {
+    name: "Visa card with spaces",
+    text: "charge the order to 4111 1111 1111 1111 and email a receipt",
+    expectType: "credit_card",
+    expectAction: "warn",
+  },
+  {
+    name: "Mastercard, no separators",
+    text: "the card on file is 5555555555554444 ending 4444",
+    expectType: "credit_card",
+    expectAction: "warn",
+  },
+  {
+    name: "Amex card",
+    text: "my amex 378282246310005 was declined",
+    expectType: "credit_card",
+    expectAction: "warn",
+  },
+  {
+    name: "SSN dashed form",
+    text: "Employee SSN: 123-45-6789 on the onboarding form",
+    expectType: "ssn",
+    expectAction: "warn",
+  },
+  {
+    name: "SSN bare with context keyword",
+    text: "social security number 123456789 was verified",
+    expectType: "ssn",
+    expectAction: "warn",
+  },
 ];

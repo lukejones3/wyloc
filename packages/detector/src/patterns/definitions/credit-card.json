@@ -1,0 +1,27 @@
+{
+  "id": "pii.credit_card",
+  "displayName": "Credit card number",
+  "tier": "tier_2",
+  "type": "credit_card",
+  "confidence": "high",
+  "blockEligible": false,
+  "reason": "Looks like a payment card number (matches a card network prefix and passes the Luhn checksum).",
+  "regex": { "source": "\\b[2-6](?:[ -]?\\d){12,18}\\b" },
+  "structuralValidator": "creditCard",
+  "fixtures": {
+    "positive": [
+      "pay with card 4111 1111 1111 1111 today",
+      "Visa on file 4111-1111-1111-1111 expires soon",
+      "card 4111111111111111 charged",
+      "mastercard 5555555555554444 declined",
+      "amex 378282246310005 authorized",
+      "discover 6011111111111117 saved"
+    ],
+    "negative": [
+      "order id 4111 1111 1111 1112 was shipped",
+      "the tracking number is 1234567890123456 here",
+      "non-card 5012345678901234 reference",
+      "call 415-555-0132 for support"
+    ]
+  }
+}

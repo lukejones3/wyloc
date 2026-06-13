@@ -79,7 +79,10 @@ export type SecretType =
   // Generic / structural
   | "generic_api_key"
   | "high_entropy_string"
-  | "env_assignment";
+  | "env_assignment"
+  // Structural PII (swap-and-rehydrate; the model never needs the real value)
+  | "credit_card"
+  | "ssn";
 
 /** Environment inferred from surrounding context, used by the policy engine. */
 export type Environment = "prod" | "dev" | "unknown";

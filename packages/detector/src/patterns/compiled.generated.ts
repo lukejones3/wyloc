@@ -9,6 +9,7 @@
  */
 
 import type { CompiledPattern } from "./schema.js";
+import { validators } from "./validators.js";
 
 export const COMPILED_PATTERNS: readonly CompiledPattern[] = [
   {
@@ -584,6 +585,40 @@ export const COMPILED_PATTERNS: readonly CompiledPattern[] = [
     blockEligible: true,
     reason: "Looks like an OpenAI API key.",
     regex: new RegExp("\\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9\\-_]{20,}\\b", "g"),
+  },
+  {
+    id: "pii.credit_card",
+    displayName: "Credit card number",
+    type: "credit_card",
+    tier: "tier_2",
+    confidence: "high",
+    blockEligible: false,
+    reason: "Looks like a payment card number (matches a card network prefix and passes the Luhn checksum).",
+    regex: new RegExp("\\b[2-6](?:[ -]?\\d){12,18}\\b", "g"),
+    structuralValidator: validators["creditCard"]!,
+  },
+  {
+    id: "pii.ssn_context",
+    displayName: "US Social Security number (context-gated)",
+    type: "ssn",
+    tier: "tier_2",
+    confidence: "high",
+    blockEligible: false,
+    reason: "Looks like a US Social Security number — a 9-digit value labelled with SSN/social-security context.",
+    regex: new RegExp("(?:\\bssn\\b|\\bsocial[ _-]?security(?:[ _-]?(?:number|no|num|#))?\\b)[^\\d\\n]{0,16}(\\d{3}[- ]?\\d{2}[- ]?\\d{4})", "ig"),
+    captureGroup: 1,
+    structuralValidator: validators["ssn"]!,
+  },
+  {
+    id: "pii.ssn_dashed",
+    displayName: "US Social Security number",
+    type: "ssn",
+    tier: "tier_2",
+    confidence: "high",
+    blockEligible: false,
+    reason: "Looks like a US Social Security number in dashed/spaced AAA-GG-SSSS form.",
+    regex: new RegExp("\\b(\\d{3})([ -])(\\d{2})\\2(\\d{4})\\b", "g"),
+    structuralValidator: validators["ssn"]!,
   },
   {
     id: "planetscale.api_token",

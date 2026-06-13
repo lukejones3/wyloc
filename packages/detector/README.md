@@ -72,7 +72,7 @@ CI guard.
 
 Findings come from five layers, applied in order (plan §5):
 
-1. **Known patterns** — 80 vendor/format patterns from the JSON pattern
+1. **Known patterns** — 83 vendor/format patterns from the JSON pattern
    engine, evaluated by tier (see **Pattern coverage** below). Highest
    precision; the only layer the policy engine will `block` on.
 2. **Entropy** — Shannon entropy over secret-shaped tokens. Hashes,
@@ -94,7 +94,7 @@ purpose (plan §6).
 
 ## Pattern coverage
 
-**80 patterns** compiled from JSON definitions, across three tiers. Each
+**83 patterns** compiled from JSON definitions, across three tiers. Each
 tier is a distinct evaluation strategy with a different false-positive
 profile:
 
@@ -113,12 +113,21 @@ near-zero-false-positive, so these fire on shape with no context required.
 | SaaS / dev tools | SendGrid, Shopify (4), npm, PyPI, Postman, PlanetScale (3), New Relic (3), Sentry (org + user), Grafana (3), Twilio, Airtable PAT |
 | Generic format | OAuth bearer |
 
-### Tier 2 — structural (4)
+### Tier 2 — structural (7)
 
 A recognizable shape rather than a fixed prefix; an optional named
 `structuralValidator` hook can reject shapes that match the regex but fail
 a deeper check. JWT, PEM private key, database URL with embedded
 credentials, GCP service-account JSON.
+
+Structural PII (swap-and-rehydrate, never block — the model never needs the
+real value), all using the validator hook:
+
+| Pattern | Gate | Notes |
+|---|---|---|
+| `pii.credit_card` | **Luhn** checksum + card-network prefix | Visa/Mastercard/Amex/Discover, with optional spaces/dashes. A card-shaped number that fails Luhn (order/tracking id) is rejected. |
+| `pii.ssn_dashed` | SSN validity (area ≠ 000/666/900-999, group ≠ 00, serial ≠ 0000) | Dashed/spaced `AAA-GG-SSSS` shape — distinctive enough to fire without context. |
+| `pii.ssn_context` | required SSN/social-security keyword in-regex + validity | A bare 9-digit run only matches when labelled (`ssn`, `social security…`); without context it never fires. |
 
 ### Tier 3 — generic high-entropy, context-gated (6)
 

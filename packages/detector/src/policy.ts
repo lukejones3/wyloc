@@ -119,6 +119,9 @@ const TYPE_LABELS: Record<SecretType, string> = {
   generic_api_key: "API key",
   high_entropy_string: "high-entropy string",
   env_assignment: "credential assignment",
+  // Structural PII
+  credit_card: "credit card number",
+  ssn: "US Social Security number",
 };
 
 function summarize(findings: Finding[], perFinding: Action[]): string {

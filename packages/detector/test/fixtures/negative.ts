@@ -107,4 +107,29 @@ export const negativeFixtures: NegativeFixture[] = [
     name: "Semver and package names",
     text: "Upgrade typescript@5.7.2 and @types/node@22.10.1 then rebuild.",
   },
+  // --- Structural-PII false-positive traps (the gating must hold) ---
+  {
+    name: "Innocent document full of numbers",
+    text: "Invoice 2024-0007, total $1,234.56. Order 1000000000000016 shipped via tracking 1Z999AA10123456784 on 2024-06-13. Qty 16 units, SKU 7788990011, PO 4500002391.",
+  },
+  {
+    name: "Card-shaped number that FAILS Luhn",
+    text: "internal order id 4111 1111 1111 1112 was confirmed and shipped",
+  },
+  {
+    name: "16-digit order/reference number (no valid card prefix)",
+    text: "your reference number is 5012345678901234, keep it for your records",
+  },
+  {
+    name: "Bare 9-digit number with NO SSN context",
+    text: "the internal record id is 123456789 in the legacy system",
+  },
+  {
+    name: "Structurally-invalid SSN",
+    text: "the placeholder value 000-00-0000 means the field is unset",
+  },
+  {
+    name: "US phone number (not an SSN shape)",
+    text: "reach the support desk at 415-867-5309 during business hours",
+  },
 ];

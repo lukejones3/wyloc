@@ -1,0 +1,28 @@
+{
+  "id": "pii.ssn_context",
+  "displayName": "US Social Security number (context-gated)",
+  "tier": "tier_2",
+  "type": "ssn",
+  "confidence": "high",
+  "blockEligible": false,
+  "reason": "Looks like a US Social Security number — a 9-digit value labelled with SSN/social-security context.",
+  "regex": {
+    "source": "(?:\\bssn\\b|\\bsocial[ _-]?security(?:[ _-]?(?:number|no|num|#))?\\b)[^\\d\\n]{0,16}(\\d{3}[- ]?\\d{2}[- ]?\\d{4})",
+    "flags": "i"
+  },
+  "captureGroup": 1,
+  "structuralValidator": "ssn",
+  "fixtures": {
+    "positive": [
+      "SSN: 123456789 on the intake form",
+      "my ssn is 123456789 thanks",
+      "social security number 123456789 verified",
+      "Social Security No: 456789012 recorded"
+    ],
+    "negative": [
+      "the internal record id is 123456789 in the system",
+      "reference id 123456789 logged at 9am",
+      "ssn: 000-00-0000 means unset"
+    ]
+  }
+}

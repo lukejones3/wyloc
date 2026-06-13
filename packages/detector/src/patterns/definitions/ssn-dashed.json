@@ -1,0 +1,24 @@
+{
+  "id": "pii.ssn_dashed",
+  "displayName": "US Social Security number",
+  "tier": "tier_2",
+  "type": "ssn",
+  "confidence": "high",
+  "blockEligible": false,
+  "reason": "Looks like a US Social Security number in dashed/spaced AAA-GG-SSSS form.",
+  "regex": { "source": "\\b(\\d{3})([ -])(\\d{2})\\2(\\d{4})\\b" },
+  "structuralValidator": "ssn",
+  "fixtures": {
+    "positive": [
+      "Employee record 123-45-6789 on file",
+      "applicant 456-78-9012 submitted",
+      "id listed as 123 45 6789 here"
+    ],
+    "negative": [
+      "clearly invalid 000-00-0000 placeholder",
+      "area 666-45-6789 is never issued",
+      "high group 900-45-6789 not valid",
+      "call 415-867-5309 today"
+    ]
+  }
+}
