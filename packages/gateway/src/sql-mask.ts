@@ -84,6 +84,16 @@ export class SqlMaskHandle {
     return this.readyPromise;
   }
 
+  /**
+   * Mask a whole string as one SQL statement (e.g. the body of a .sql file read
+   * by an agentic tool), folding mappings into `store`. Public entry for the
+   * file-read path; returns the rewritten text + count of masked identifiers.
+   * Unparseable input comes back unchanged (n = 0).
+   */
+  async maskRaw(sql: string, store: SessionStore): Promise<{ out: string; n: number }> {
+    return this.maskOne(sql, store);
+  }
+
   private async maskOne(sql: string, store: SessionStore): Promise<{ out: string; n: number }> {
     if (!this.masker) return { out: sql, n: 0 };
     try {

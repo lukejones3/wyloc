@@ -25,6 +25,16 @@ export interface ProviderAdapter {
    */
   forEachText(body: unknown, visit: TextVisitor): Promise<void>;
 
+  /**
+   * Walk the parsed request body and replace the TEXT content of tool results
+   * (the files an agentic client read) in place using `visit`. This is the
+   * payload only — the tool-call ENVELOPE (tool_use_id / tool_call_id / role /
+   * type / name / arguments) and any non-text blocks (images, documents) are
+   * never touched. Anthropic: `tool_result` block content; OpenAI: `role:"tool"`
+   * message content.
+   */
+  forEachToolResultText(body: unknown, visit: TextVisitor): Promise<void>;
+
   /** Inject the verbatim-echo directive into the request (provider-specific). */
   injectDirective(body: unknown): void;
 

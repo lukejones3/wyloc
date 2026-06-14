@@ -14,6 +14,7 @@ import { forward, sendGatewayError, type ProxyContext } from "./proxy.js";
 import { SessionStore } from "./session.js";
 import { SqlMaskHandle } from "./sql-mask.js";
 import { CodeMaskHandle } from "./code-mask.js";
+import { FileReadMaskHandle } from "./mask-file-reads.js";
 import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
 
@@ -61,6 +62,13 @@ export function createGateway(config: GatewayConfig): Server {
     );
   }
 
+  // File-read masking (on by default): masks the text of tool results — the
+  // files the agent reads on its own — reusing the SQL/code handles + detector.
+  const fileReadMask = new FileReadMaskHandle(config, sqlMask, codeMask, log);
+  if (config.maskFileReads) {
+    log.info("File-read masking enabled (tool-result content: detector always, SQL/code per toggle)");
+  }
+
   const server = createServer((req, res) => {
     // Parse just the path; querystrings are forwarded as-is via req.url.
     const rawUrl = req.url ?? "/";
@@ -106,6 +114,7 @@ export function createGateway(config: GatewayConfig): Server {
       upstreamBaseUrl,
       sqlMask: config.maskSql ? sqlMask : null,
       codeMask: config.maskCode ? codeMask : null,
+      fileReadMask: config.maskFileReads ? fileReadMask : null,
     };
 
     if (isMessages || isCountTokens || isChat || isOpenAiOther || path.startsWith("/v1/")) {

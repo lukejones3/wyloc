@@ -78,6 +78,20 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   business logic pass through so the model can still help. Mask pairs fold into
   the same session store and rehydrate in the response. Pure in-process (no
   worker). Works on both providers.
+- **Phase 7 — file-read masking** ✅ (on by default, `WYLOC_MASK_FILE_READS`).
+  The files Claude Code / Codex read on their own arrive as tool-result content
+  (Anthropic `tool_result` blocks, OpenAI `role:"tool"` messages) — previously
+  forwarded verbatim. That text is now masked the same way typed text is: the
+  **detector runs unconditionally** on it (the core win — secrets/PII in any
+  file, incl. `.env`/config/logs that aren't SQL or code), and the SQL / code
+  maskers additionally apply when their toggle is on and the content sniffs as
+  SQL / TS-JS (a structural masker's output is adopted only if it actually
+  masked something, so a plain file a sniff misroutes is never corrupted). The
+  tool-call **envelope** — `tool_use_id`/`tool_call_id`/`role`/`type`/`name`/
+  `arguments` and non-text blocks — is never touched; only the file text
+  payload changes. A per-session content-hash cache makes re-sent history O(1).
+  Shares the one store/salt, so a secret seen in a file and in typed text maps
+  to the same mock and rehydrates together.
 
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).
@@ -150,6 +164,11 @@ npm test --workspace @wyloc/gateway   # runs all six below
   secret, a comment) is masked/stripped/swapped before forwarding — external
   imports (React) survive — and the masked class echoed back by the fake
   upstream rehydrates to its real name in the stream.
+- `test-file-read-mask.mjs` — Phase 7 (file reads, default on): tool-result
+  content carrying SQL, TS code, and a plain `.env` secret is masked (detector
+  always; SQL/code per toggle) with the `tool_result` / `role:"tool"` envelope
+  and assistant `tool_calls` left byte-intact; a masked class echoed back
+  rehydrates in the stream. Covers Anthropic and OpenAI shapes.
 
 ## Configuration
 
@@ -168,6 +187,7 @@ later becomes enterprise central policy). Nothing is hardcoded.
 | `WYLOC_SQL_DIALECT` | `postgres` | SQL dialect for the masker's parser (postgres/snowflake/bigquery/…) |
 | `WYLOC_MASK_CODE` | `false` | Mask TS/JS identifiers + internal infra + strip comments in fenced code blocks via @wyloc/code-masker (pure, no worker) |
 | `WYLOC_MASK_CODE_MEMBERS` | `false` | Also mask methods/properties of internal classes (well-typed code only) |
+| `WYLOC_MASK_FILE_READS` | `true` | Mask the content of tool results (files the agent read): detector always; SQL/code per their toggles. Structure never touched |
 | `WYLOC_VERBOSE` | `true` | Operational logging (never logs secrets) |
 
 ## Privacy model

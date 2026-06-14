@@ -46,6 +46,34 @@ export class AnthropicAdapter implements ProviderAdapter {
     }
   }
 
+  /**
+   * Rewrite the TEXT payload of every `tool_result` block (the file content an
+   * agentic client read) — `content` as a bare string, or the `text` of each
+   * `{type:"text"}` sub-block. The `type` / `tool_use_id` envelope and any
+   * image/document sub-blocks are left exactly as received.
+   */
+  async forEachToolResultText(body: unknown, visit: TextVisitor): Promise<void> {
+    const obj = body as { messages?: unknown };
+    if (!Array.isArray(obj.messages)) return;
+    for (const msg of obj.messages) {
+      if (msg === null || typeof msg !== "object") continue;
+      const content = (msg as { content?: unknown }).content;
+      if (!Array.isArray(content)) continue; // tool_result only ever appears in a block array
+      for (const block of content) {
+        if (block === null || typeof block !== "object") continue;
+        if ((block as { type?: unknown }).type !== "tool_result") continue;
+        const tr = block as { content?: unknown };
+        if (typeof tr.content === "string") {
+          tr.content = await visit(tr.content);
+        } else if (Array.isArray(tr.content)) {
+          for (const sub of tr.content) {
+            if (isTextPart(sub)) sub.text = await visit(sub.text);
+          }
+        }
+      }
+    }
+  }
+
   injectDirective(body: unknown): void {
     const obj = body as { system?: unknown };
     const sys = obj.system;

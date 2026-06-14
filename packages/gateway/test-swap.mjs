@@ -2,15 +2,17 @@
  * Phase 2 swap test (no real Anthropic key needed).
  *
  * Sends a Messages request through the gateway carrying a real-shaped AWS
- * key in: (a) the system string, (b) a user text block, and (c) — to
- * prove it is NOT touched — inside a tool_result block. A fake upstream
- * captures exactly what the gateway forwarded.
+ * key in: (a) the system string, (b) a user text block, and (c) inside a
+ * tool_result block (a file the agent read). A fake upstream captures exactly
+ * what the gateway forwarded.
  *
  * Asserts:
  *   • the secret in system + user text is replaced with WYLOC_MOCK_
- *   • the upstream body does NOT contain the real secret in the rewritten
- *     positions
- *   • tool_use.input and tool_result.content are byte-IDENTICAL
+ *   • the secret in the tool_result (file content) is ALSO swapped — to the
+ *     SAME deterministic mock — now that file-read masking is on by default
+ *   • the upstream body does NOT contain the real secret anywhere
+ *   • tool_use.input is byte-IDENTICAL and the tool_result ENVELOPE
+ *     (type, tool_use_id) is preserved — only the file text payload changed
  *   • message structure (roles, block order, ids) is preserved
  */
 
@@ -44,8 +46,9 @@ const requestObj = {
     {
       role: "user",
       content: [
-        // The same secret lives here in a tool_result — must pass through
-        // BYTE-INTACT (we never rewrite tool_result content).
+        // The same secret lives here in a tool_result (file content). It is now
+        // swapped to the same mock by the file-read masking pass, while the
+        // tool_result envelope (type, tool_use_id) stays intact.
         { type: "tool_result", tool_use_id: "toolu_42", content: `AWS_KEY=${SECRET}` },
       ],
     },
@@ -146,9 +149,20 @@ async function main() {
   );
 
   const toolResult = upstreamObj.messages[2].content[0];
+  // Envelope intact; file text payload masked.
   assert(
-    toolResult.content === `AWS_KEY=${SECRET}`,
-    "tool_result.content passes through BYTE-INTACT (secret NOT swapped here)",
+    toolResult.type === "tool_result" && toolResult.tool_use_id === "toolu_42",
+    "tool_result envelope (type, tool_use_id) preserved",
+  );
+  assert(!toolResult.content.includes(SECRET), "secret swapped out of tool_result (file) content");
+  assert(
+    toolResult.content.startsWith("AWS_KEY=") && toolResult.content.includes("WYLOC_MOCK_"),
+    "tool_result content shape preserved, value replaced by a mock",
+  );
+  const mockInFile = toolResult.content.match(/WYLOC_MOCK_\S+/)[0].replace(/\W+$/, "");
+  assert(
+    mockInFile === mockInText,
+    "same secret in file → same mock as the typed text (deterministic)",
   );
 
   // Structure preserved.

@@ -24,6 +24,7 @@ import type { Logger } from "./logger.js";
 import type { SessionStore } from "./session.js";
 import type { SqlMaskHandle } from "./sql-mask.js";
 import type { CodeMaskHandle } from "./code-mask.js";
+import type { FileReadMaskHandle } from "./mask-file-reads.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import { runDetectorSwap } from "./swap-request.js";
 import {
@@ -60,6 +61,13 @@ export interface ProxyContext {
    * detector swap. Null when maskCode is off. Pure in-process (no worker).
    */
   codeMask: CodeMaskHandle | null;
+  /**
+   * Optional file-read masking handle. When present and enabled, the text of
+   * tool results (files the agent read) is masked — detector always, SQL/code
+   * per their toggles — before the message-text detector swap. Null when
+   * maskFileReads is off.
+   */
+  fileReadMask: FileReadMaskHandle | null;
 }
 
 /**
@@ -70,7 +78,7 @@ export async function forward(
   res: ServerResponse,
   ctx: ProxyContext,
 ): Promise<void> {
-  const { config, log, path, store, inspect, sqlMask, codeMask, adapter, upstreamBaseUrl } = ctx;
+  const { config, log, path, store, inspect, sqlMask, codeMask, fileReadMask, adapter, upstreamBaseUrl } = ctx;
   const started = Date.now();
 
   // 1. Buffer the request body.
@@ -111,6 +119,22 @@ export async function forward(
       }
     }
 
+    // File-read masking pass (optional): mask the text of tool results (files
+    // the agent read on its own) — detector always, SQL/code per their toggles
+    // — also BEFORE the message-text detector swap. Shares the same store/salt.
+    let fileReadSecretMock = false;
+    if (fileReadMask) {
+      const fr = await fileReadMask.maskBody(adapter, bodyForSwap, store);
+      bodyForSwap = fr.body;
+      fileReadSecretMock = fr.hasSecretMock;
+      if (fr.files > 0) {
+        log.debug(
+          `file-read-mask: ${fr.files} tool-result(s), ` +
+            `${fr.masked} identifier/value(s) masked in ${path}`,
+        );
+      }
+    }
+
     const outcome = await runDetectorSwap(adapter, bodyForSwap, config, store);
 
     if (outcome.detected > 0) {
@@ -147,6 +171,20 @@ export async function forward(
     }
 
     outboundBody = outcome.body;
+
+    // If a secret mock came ONLY from a file read (so the message-text swap
+    // didn't already inject), still inject the verbatim-echo directive this turn
+    // so the mock round-trips reliably through the response.
+    if (fileReadSecretMock && !outcome.injected && config.injectSystemPrompt) {
+      try {
+        const parsed = JSON.parse(outboundBody.toString("utf8"));
+        adapter.injectDirective(parsed);
+        outboundBody = Buffer.from(JSON.stringify(parsed), "utf8");
+        log.debug(`directive injected for ${path} (file-read secret mock present)`);
+      } catch {
+        /* non-JSON body shouldn't reach here; leave as-is if it does */
+      }
+    }
   }
 
   // 2. Forward to upstream with the caller's own credentials/headers.

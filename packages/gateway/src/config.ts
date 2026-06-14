@@ -79,6 +79,16 @@ export interface GatewayConfig {
    * inconsistent. Enable for well-typed codebases. See @wyloc/code-masker.
    */
   maskCodeMembers: boolean;
+  /**
+   * Mask the TEXT content of tool results / tool messages — the files Claude
+   * Code and Codex read on their own and send to the model. The detector runs
+   * unconditionally on this content (the core win: secrets/PII in any file,
+   * incl. .env/config/logs that aren't SQL or code); the SQL and code maskers
+   * additionally apply when their own toggle is on and the content sniffs as
+   * SQL / TS-JS. Tool-call STRUCTURE (ids, names, arguments) is never touched.
+   * Default ON — set false to restore the prior pass-through behavior.
+   */
+  maskFileReads: boolean;
 }
 
 function envBool(name: string, fallback: boolean): boolean {
@@ -130,5 +140,6 @@ export function loadConfig(): GatewayConfig {
     sqlDialect: envStr("WYLOC_SQL_DIALECT", "postgres"),
     maskCode: envBool("WYLOC_MASK_CODE", false),
     maskCodeMembers: envBool("WYLOC_MASK_CODE_MEMBERS", false),
+    maskFileReads: envBool("WYLOC_MASK_FILE_READS", true),
   };
 }

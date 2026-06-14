@@ -71,6 +71,16 @@ export class CodeMaskHandle {
       : null;
   }
 
+  /**
+   * Mask a whole string as one TS/JS source file (e.g. the body of a .ts file
+   * read by an agentic tool), folding mappings into `store`. Public entry for
+   * the file-read path; returns the rewritten text + count of masked
+   * identifiers/values. Pathological input comes back unchanged (n = 0).
+   */
+  maskRaw(code: string, fileName: string, store: SessionStore): { out: string; n: number } {
+    return this.maskOne(code, fileName, store);
+  }
+
   private maskOne(code: string, fileName: string, store: SessionStore): { out: string; n: number } {
     if (!this.masker) return { out: code, n: 0 };
     try {

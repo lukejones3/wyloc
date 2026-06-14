@@ -29,6 +29,17 @@ eq(holdPoint(MOCK + " done"), (MOCK + " done").length, "flushes a terminated moc
 // Plain text ending in a non-marker char flushes entirely.
 eq(holdPoint("just some words"), "just some words".length, "flushes plain text");
 
+// Regression: a complete mock must never be split by a hold boundary that
+// another mock's prefix would otherwise create. Here `zebra_x` starts with the
+// last char of the complete mock `Class_3z`; the boundary must NOT fall inside
+// `Class_3z` (which would flush `Class_3` un-rehydrated).
+{
+  const ms = ["Class_3z", "zebra_x"];
+  eq(holdPoint("the Class_3z", ms), "the Class_3z".length, "complete mock not split by another mock's prefix");
+  // A genuine trailing partial of a known mock is still held.
+  eq(holdPoint("call zebra_", ms), "call ".length, "genuine trailing partial still held");
+}
+
 console.error("\n── streaming: mock split across pushes ─────────────");
 {
   const s = new RehydrationStream(mappings);

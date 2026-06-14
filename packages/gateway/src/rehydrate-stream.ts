@@ -70,6 +70,21 @@ export function holdPoint(s: string, mocks?: readonly string[]): number {
         }
       }
     }
+    // Correction: never let the hold boundary fall STRICTLY INSIDE a complete
+    // mock occurrence. Without this, one mock's tail char coincidentally being
+    // another mock's prefix (e.g. a hash ending in a char that starts a second
+    // mask) would split an already-complete token, flushing its prefix
+    // un-rehydrated. Over-holding is always safe; splitting a complete mock is
+    // the bug. Push the boundary out to the end of any mock it would bisect.
+    for (const mock of mocks) {
+      if (!mock) continue;
+      let at = s.indexOf(mock);
+      while (at !== -1) {
+        const end = at + mock.length;
+        if (at < hold && hold < end) hold = end;
+        at = s.indexOf(mock, at + 1);
+      }
+    }
   }
   return hold;
 }

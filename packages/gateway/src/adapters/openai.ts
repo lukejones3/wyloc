@@ -56,6 +56,28 @@ export class OpenAIAdapter implements ProviderAdapter {
     }
   }
 
+  /**
+   * Rewrite the TEXT content of every `role:"tool"` message (the file content
+   * an agentic client read). Handles string content and `{type:"text"}` parts.
+   * `role` / `tool_call_id` and any assistant `tool_calls` are never touched.
+   */
+  async forEachToolResultText(body: unknown, visit: TextVisitor): Promise<void> {
+    const obj = body as { messages?: unknown };
+    if (!Array.isArray(obj.messages)) return;
+    for (const msg of obj.messages) {
+      if (msg === null || typeof msg !== "object") continue;
+      const m = msg as OpenAiMessage;
+      if (m.role !== "tool") continue;
+      if (typeof m.content === "string") {
+        m.content = await visit(m.content);
+      } else if (Array.isArray(m.content)) {
+        for (const part of m.content) {
+          if (isTextPart(part)) part.text = await visit(part.text);
+        }
+      }
+    }
+  }
+
   injectDirective(body: unknown): void {
     const obj = body as { messages?: unknown };
     if (!Array.isArray(obj.messages)) return;
