@@ -117,7 +117,11 @@ export function resolveConfig(input: CodeMaskerConfigInput = {}): CodeMaskerConf
 
     maskStrings: input.maskStrings ?? true,
     maskPrivateIps: input.maskPrivateIps ?? true,
-    internalTlds: input.internalTlds ?? DEFAULT_INTERNAL_TLDS,
+    // internalTlds EXTENDS the built-in set (internal/corp/local/…) rather than
+    // replacing it, so an org adding a TLD never loses the safe defaults.
+    internalTlds: input.internalTlds
+      ? [...DEFAULT_INTERNAL_TLDS, ...input.internalTlds]
+      : DEFAULT_INTERNAL_TLDS,
     internalDomains: input.internalDomains ?? [],
     internalPathPatterns: input.internalPathPatterns ?? DEFAULT_INTERNAL_PATH_PATTERNS,
 

@@ -89,6 +89,16 @@ export interface GatewayConfig {
    * Default ON — set false to restore the prior pass-through behavior.
    */
   maskFileReads: boolean;
+
+  // ── Derived from wyloc.json (empty unless a config file sets them) ──
+  /** Bare import scopes the code-masker treats as internal (e.g. "@acme/*"). */
+  internalScopes: string[];
+  /** Org domains + specific hosts masked in code strings/URLs. */
+  internalDomains: string[];
+  /** Internal TLD labels extending the code-masker defaults. */
+  internalTlds: string[];
+  /** Blocklist terms fed to the sql/code masker literal passes. */
+  blocklistSubstrings: string[];
 }
 
 function envBool(name: string, fallback: boolean): boolean {
@@ -141,5 +151,9 @@ export function loadConfig(): GatewayConfig {
     maskCode: envBool("WYLOC_MASK_CODE", false),
     maskCodeMembers: envBool("WYLOC_MASK_CODE_MEMBERS", false),
     maskFileReads: envBool("WYLOC_MASK_FILE_READS", true),
+    internalScopes: [],
+    internalDomains: [],
+    internalTlds: [],
+    blocklistSubstrings: [],
   };
 }

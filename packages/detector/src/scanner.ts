@@ -117,6 +117,7 @@ function runPrefixedOrStructural(
       environment: inferEnvironment(text, start, end, cfg.contextWindow),
       reason: pat.reason,
       ruleId: pat.id,
+      ...(pat.maskHint !== undefined ? { maskHint: pat.maskHint } : {}),
     });
   }
 }
@@ -177,18 +178,21 @@ function runGenericHighEntropy(
       environment: inferEnvironment(text, start, end, cfg.contextWindow),
       reason: pat.reason,
       ruleId: pat.id,
+      ...(pat.maskHint !== undefined ? { maskHint: pat.maskHint } : {}),
     });
   }
 }
 
 function runPatterns(text: string, cfg: DetectorConfig): Finding[] {
   const out: Finding[] = [];
+  // Built-in table first, then any org-supplied custom patterns (wyloc.json).
   for (const pat of COMPILED_PATTERNS) {
-    if (pat.tier === "tier_3") {
-      runGenericHighEntropy(pat, text, cfg, out);
-    } else {
-      runPrefixedOrStructural(pat, text, cfg, out);
-    }
+    if (pat.tier === "tier_3") runGenericHighEntropy(pat, text, cfg, out);
+    else runPrefixedOrStructural(pat, text, cfg, out);
+  }
+  for (const pat of cfg.customPatterns ?? []) {
+    if (pat.tier === "tier_3") runGenericHighEntropy(pat, text, cfg, out);
+    else runPrefixedOrStructural(pat, text, cfg, out);
   }
   return out;
 }

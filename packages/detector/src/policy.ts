@@ -122,6 +122,8 @@ const TYPE_LABELS: Record<SecretType, string> = {
   // Structural PII
   credit_card: "credit card number",
   ssn: "US Social Security number",
+  // Org-defined custom pattern (wyloc.json)
+  custom: "custom sensitive value",
 };
 
 function summarize(findings: Finding[], perFinding: Action[]): string {

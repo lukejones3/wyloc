@@ -101,15 +101,25 @@ function token(input: string, len: number): string {
  *     copy-out rehydration restores the real value.
  */
 
-/** Obvious, non-sensitive placeholder for an opaque secret. */
-function placeholder(type: SecretType, seed: string): string {
-  const tag = token(seed, 6).toUpperCase();
-  const base = type.toUpperCase();
-  return `WYLOC_MOCK_${base}_${tag}`;
+/** Uppercase identifier-safe slug for a mock label (e.g. "Employee ID" → EMPLOYEE_ID). */
+function slug(label: string): string {
+  const s = label.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return s.length > 0 ? s : "CUSTOM";
 }
 
-function mockFor(real: string, type: SecretType, salt: string): string {
+/** Obvious, non-sensitive placeholder for an opaque secret. `label` is a
+ *  SecretType or a non-sensitive custom hint; both are slugged identically. */
+function placeholder(label: string, seed: string): string {
+  const tag = token(seed, 6).toUpperCase();
+  return `WYLOC_MOCK_${slug(label)}_${tag}`;
+}
+
+function mockFor(real: string, type: SecretType, salt: string, hint?: string): string {
   const seed = real + "::" + salt;
+
+  // Org-defined custom patterns: shape the mock from the pattern's
+  // non-sensitive label so the model (and humans) can tell what it stands for.
+  if (type === "custom") return placeholder(hint ?? "custom", seed);
 
   switch (type) {
     // ── Structural types: shape carries meaning, keep it realistic ──
@@ -205,7 +215,7 @@ export function buildSwap(
     if (byReal.has(f.value)) continue;
     byReal.set(f.value, {
       real: f.value,
-      mock: mockFor(f.value, f.type, salt),
+      mock: mockFor(f.value, f.type, salt, f.maskHint),
       type: f.type,
     });
   }

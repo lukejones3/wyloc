@@ -66,6 +66,14 @@ export class CodeMaskHandle {
           resolveConfig({
             sessionSalt: store.saltValue,
             maskMembers: config.maskCodeMembers,
+            // Org-declared internal scopes / infra / blocklist (from wyloc.json).
+            internalScopes: config.internalScopes,
+            internalDomains: config.internalDomains,
+            internalTlds: config.internalTlds,
+            detectorConfig: config.detector,
+            ...(config.blocklistSubstrings.length > 0
+              ? { maskBucket2: true, bucket2Substrings: config.blocklistSubstrings }
+              : {}),
           }),
         )
       : null;

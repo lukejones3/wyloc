@@ -188,7 +188,51 @@ later becomes enterprise central policy). Nothing is hardcoded.
 | `WYLOC_MASK_CODE` | `false` | Mask TS/JS identifiers + internal infra + strip comments in fenced code blocks via @wyloc/code-masker (pure, no worker) |
 | `WYLOC_MASK_CODE_MEMBERS` | `false` | Also mask methods/properties of internal classes (well-typed code only) |
 | `WYLOC_MASK_FILE_READS` | `true` | Mask the content of tool results (files the agent read): detector always; SQL/code per their toggles. Structure never touched |
+| `WYLOC_CONFIG` | `./wyloc.json` | Path to the company config file (see below) |
 | `WYLOC_VERBOSE` | `true` | Operational logging (never logs secrets) |
+
+## Company configuration — `wyloc.json`
+
+A company declares its org-specific masking rules **once** in `wyloc.json`
+instead of hand-coding integration. It is loaded at startup, **validated
+fail-closed**, and compiled into every masking surface (detector, sql-masker,
+code-masker, gateway). See [`wyloc.example.json`](./wyloc.example.json) for a
+complete example.
+
+It controls:
+
+- **Custom patterns** — org-specific sensitive values (employee IDs, account
+  numbers, project codenames…) detected and swapped like any secret. Authored
+  with **constrained, safe-by-construction types** — no regex expertise needed:
+  - `prefix` — a literal prefix + a bounded format (`EMP-` + 6 digits)
+  - `context` — a value shape only near a keyword (`8 digits` within 16 chars of `account`)
+  - `list` — exact terms/substrings (codenames, the blocklist)
+  - `known` — pre-vetted shapes by name (`ipv4`, `email`, `uuid`, `mac`, `us_phone`, `iban`)
+  - `regex` — an **advanced** escape hatch (must set `"advanced": true`, requires
+    `examples`, gets static ReDoS rejection, and runs on the **RE2** engine —
+    linear-time, can't backtrack. If `re2` isn't installed the gateway
+    fail-closes rather than run raw regex unsafely.)
+- **`internalScopes`** — bare import scopes (`@acme/*`) the code-masker treats as internal.
+- **`internalDomains` / `internalHosts` / `internalTlds`** — internal infra masked in strings/URLs.
+- **`blocklist`** — proprietary terms masked everywhere.
+- **`policy`** — masking category toggles (`sql`, `code`, `fileReads`, `members`, `pii`).
+- **`logging`** — per-category granularity (metadata-only is enforced regardless).
+
+**Fail-closed validation.** The whole file is validated before the gateway
+binds a port: structure, unknown/typo keys (rejected with a *did you mean*
+hint), every pattern compiles, self-tests against its `examples`, no
+catastrophic-backtracking regex, no duplicate ids. **Any** problem → the gateway
+prints every issue and **refuses to start**. A security tool on a broken config
+gives false protection.
+
+**Precedence:** `wyloc.json` **>** environment variables **>** defaults for
+security-policy fields (company policy is authoritative — a stray local env var
+can't silently weaken a fleet-wide rule). Operational fields (`port`, `host`,
+upstream URLs) stay env-driven. **No `wyloc.json` present → behavior is exactly
+the env-only path above** (fully backward compatible).
+
+> Pattern `name`s/`id`s are non-sensitive labels — they shape the mock the model
+> sees (e.g. `WYLOC_MOCK_EMPLOYEE_ID_…`). Never put a secret value in a name.
 
 ## Privacy model
 

@@ -10,9 +10,32 @@
 import { loadConfig } from "./config.js";
 import { Logger } from "./logger.js";
 import { createGateway } from "./server.js";
+import { loadWylocConfig, WylocConfigError } from "./wyloc/index.js";
+import { applyWyloc } from "./wyloc/apply.js";
 
 function main(): void {
-  const config = loadConfig();
+  let config = loadConfig();
+
+  // Company config (wyloc.json). FAIL-CLOSED: any problem stops startup with a
+  // specific report — a security gateway never runs on a broken config.
+  try {
+    const wyloc = loadWylocConfig();
+    if (wyloc) {
+      config = applyWyloc(config, wyloc);
+      const pc = wyloc.customPatterns.length;
+      console.error(
+        `[wyloc] loaded ${wyloc.path} — ${pc} custom pattern${pc === 1 ? "" : "s"}, ` +
+          `${wyloc.internalScopes.length} internal scope(s), ${wyloc.blocklistSubstrings.length} blocklist term(s)`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof WylocConfigError) {
+      console.error(err.format());
+      process.exit(1);
+    }
+    throw err;
+  }
+
   const log = Logger.from(config);
   const server = createGateway(config);
 

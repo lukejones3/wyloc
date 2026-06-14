@@ -1,0 +1,46 @@
+{
+  "version": 1,
+
+  "patterns": [
+    {
+      "name": "Employee ID",
+      "match": { "type": "prefix", "prefix": "EMP-", "format": { "kind": "digits", "length": 6 } },
+      "examples": { "match": ["EMP-123456"], "noMatch": ["EMP-12", "EMPLOYEE"] }
+    },
+    {
+      "name": "Internal account number",
+      "match": { "type": "context", "keywords": ["account", "acct"], "value": { "kind": "digits", "length": 8 }, "window": 16 },
+      "examples": { "match": ["account 80042217"], "noMatch": ["80042217 widgets sold"] }
+    },
+    {
+      "name": "Project codename",
+      "match": { "type": "list", "terms": ["Project Stargate", "Falcon-9X", "BlueOrchid"], "caseInsensitive": true, "wholeWord": true },
+      "examples": { "match": ["the Falcon-9X rollout"] }
+    },
+    {
+      "name": "Customer IBAN",
+      "match": { "type": "known", "format": "iban" },
+      "examples": { "match": ["GB82WEST12345698765432"] }
+    }
+  ],
+
+  "internalScopes": ["@acme/*", "@acme-internal/*"],
+  "internalDomains": ["acme.com", "acme.io"],
+  "internalHosts": ["jenkins.acme.io", "vault.prod"],
+  "internalTlds": ["internal", "corp"],
+
+  "blocklist": ["Project Stargate", "Atlas Initiative", "Skunkworks-7"],
+
+  "policy": {
+    "sql": true,
+    "code": true,
+    "fileReads": true,
+    "members": false,
+    "pii": { "creditCard": true, "ssn": true }
+  },
+
+  "logging": {
+    "default": "aggregate",
+    "categories": { "secrets": "per_incident", "custom": "per_incident", "pii": "aggregate" }
+  }
+}

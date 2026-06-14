@@ -82,7 +82,10 @@ export type SecretType =
   | "env_assignment"
   // Structural PII (swap-and-rehydrate; the model never needs the real value)
   | "credit_card"
-  | "ssn";
+  | "ssn"
+  // Org-defined custom pattern (from wyloc.json). Coarse + safe to centralize;
+  // the specific rule is in `ruleId`, the mock shape in `Finding.maskHint`.
+  | "custom";
 
 /** Environment inferred from surrounding context, used by the policy engine. */
 export type Environment = "prod" | "dev" | "unknown";
@@ -111,6 +114,12 @@ export interface Finding {
   reason: string;
   /** Stable rule identifier, for suppression and telemetry counts. */
   ruleId: string;
+  /**
+   * Optional NON-SENSITIVE label used to shape the swap mock (e.g. a custom
+   * pattern's name → `WYLOC_MOCK_EMPLOYEE_ID_<hash>`). Local-only, like value;
+   * never centralized. When absent the swap engine falls back to `type`.
+   */
+  maskHint?: string;
 }
 
 /** Policy action for a single finding or for the scan as a whole. */
@@ -143,6 +152,12 @@ export interface IncidentMetadata {
 
 /** Tuning knobs for a scan. All optional; defaults live in `defaultConfig`. */
 export interface DetectorConfig {
+  /**
+   * Extra, caller-supplied compiled patterns appended to the built-in table —
+   * the seam org-defined wyloc.json patterns flow through. Same runtime shape
+   * the scanner already consumes; reuse, not a parallel engine.
+   */
+  customPatterns?: import("./patterns/schema.js").CompiledPattern[];
   /** Minimum Shannon entropy (bits/char) for Layer 2 to consider a token. */
   entropyThreshold: number;
   /** Minimum token length for entropy scoring. */

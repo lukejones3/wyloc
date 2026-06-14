@@ -164,4 +164,10 @@ export interface CompiledPattern {
   contextRegex?: RegExp;
   /** tier_3 only: minimum entropy. */
   entropyThreshold?: number;
+  /**
+   * Optional NON-SENSITIVE label propagated to a finding's `maskHint`, used to
+   * shape the swap mock (e.g. an org pattern named "Employee ID" →
+   * `WYLOC_MOCK_EMPLOYEE_ID_<hash>`). Set by the wyloc.json compiler.
+   */
+  maskHint?: string;
 }

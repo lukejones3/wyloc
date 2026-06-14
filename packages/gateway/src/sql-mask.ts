@@ -67,7 +67,13 @@ export class SqlMaskHandle {
       // Share the store's salt so a secret seen in SQL and in prose maps to
       // the same mock as the detector pass produces.
       masker = new SqlMasker(
-        resolveConfig({ dialect: config.sqlDialect, sessionSalt: store.saltValue }),
+        resolveConfig({
+          dialect: config.sqlDialect,
+          sessionSalt: store.saltValue,
+          // Org custom patterns + blocklist reach SQL literal scrubbing too.
+          detectorConfig: config.detector,
+          sensitiveValueSubstrings: config.blocklistSubstrings,
+        }),
         worker,
       );
       ready = worker.ping().then(() => true).catch(() => false);
