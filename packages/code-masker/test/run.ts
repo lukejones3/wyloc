@@ -7,7 +7,7 @@
  */
 import ts from "typescript";
 import { CodeMasker, resolveConfig } from "../src/index.js";
-import { APP_TS, EXTERNAL_ONLY_TS, MEMBERS_TS, TEMPLATE_TS } from "./fixtures/samples.js";
+import { APP_TS, EXTERNAL_ONLY_TS, MEMBERS_TS, MEMBERS_GATED_TS, MEMBERS_ELEMENT_TS, TEMPLATE_TS } from "./fixtures/samples.js";
 
 let passed = 0;
 let failed = 0;
@@ -161,6 +161,45 @@ function main(): void {
     check(`${g} output parses (0 errors)`, parseErrors(m) === 0, `${parseErrors(m)} errors`);
   }
 
+  // ---- (a) all-resolvable member masked at EVERY site ----
+  {
+    const r = new CodeMasker(resolveConfig({ maskMembers: true })).mask(MEMBERS_TS, "members.ts");
+    const g = "[members:resolvable]";
+    // 'weight' appears as decl + this.weight + (param 'w' is a different symbol).
+    // Every occurrence of the member name is gone — no partial masking remains.
+    check(`${g} 'weight' fully masked (0 occurrences left)`, (r.masked.match(/\bweight\b/g) ?? []).length === 0);
+    check(`${g} 'score' fully masked (0 occurrences left)`, (r.masked.match(/\bscore\b/g) ?? []).length === 0);
+  }
+
+  // ---- (a') resolvable element-access member is masked, string included ----
+  {
+    const r = new CodeMasker(resolveConfig({ maskMembers: true })).mask(MEMBERS_ELEMENT_TS, "el.ts");
+    const m = r.masked;
+    const g = "[members:element]";
+    check(`${g} 'level' masked as member`, r.maskedIdentifiers.some((x) => x.real === "level" && x.kind === "member"));
+    check(`${g} 'rotate' masked as member`, r.maskedIdentifiers.some((x) => x.real === "rotate" && x.kind === "member"));
+    // gone from BOTH the declaration AND the v["level"] computed access string
+    check(`${g} 'level' absent everywhere (decl + element access)`, !wordPresent(m, "level"));
+    check(`${g} no leftover '["level"]'`, !has(m, '"level"'));
+    check(`${g} output parses (0 errors)`, parseErrors(m) === 0, `${parseErrors(m)} errors`);
+  }
+
+  // ---- (b) member with an any-typed access site is left COMPLETELY untouched ----
+  {
+    const r = new CodeMasker(resolveConfig({ maskMembers: true })).mask(MEMBERS_GATED_TS, "gated.ts");
+    const m = r.masked;
+    const g = "[members:gated]";
+    // 'emit' has an any-typed call site -> must NOT be masked anywhere.
+    check(`${g} 'emit' NOT masked (unresolvable any-site)`, !r.maskedIdentifiers.some((x) => x.real === "emit"));
+    // present at all original sites: declaration + 2 call sites = 3 occurrences.
+    check(`${g} 'emit' preserved at all 3 sites (no partial masking)`,
+      (m.match(/\bemit\b/g) ?? []).length === 3, `${(m.match(/\bemit\b/g) ?? []).length} occurrences`);
+    // selectivity: a fully-resolvable member on the SAME class IS still masked.
+    check(`${g} 'count' (all-resolvable) masked`, r.maskedIdentifiers.some((x) => x.real === "count" && x.kind === "member"));
+    check(`${g} 'count' absent everywhere`, !wordPresent(m, "count"));
+    check(`${g} output parses (0 errors)`, parseErrors(m) === 0, `${parseErrors(m)} errors`);
+  }
+
   // ---- Real repo file as a real-shaped fixture ----
   {
     const src = ts.sys.readFile(new URL("../../gateway/src/session.ts", import.meta.url).pathname);
@@ -250,6 +289,20 @@ function main(): void {
     const restored = masker.rehydrate(reply, r.session);
     check(`${g} internal host restored in reply`, has(restored, "billing.internal.acme.com"));
     check(`${g} host mask gone`, !has(restored, hostMask));
+  }
+
+  // ---- (c) round-trip with a MASKED MEMBER ----
+  {
+    const masker = new CodeMasker(resolveConfig({ maskMembers: true }));
+    const r = masker.mask(MEMBERS_TS, "members.ts");
+    const g = "[round-trip:member]";
+    const scoreMask = r.maskedIdentifiers.find((x) => x.real === "score" && x.kind === "member")!.mask;
+    // LLM reply references the masked member + invents a new method name.
+    const reply = `s.${scoreMask}(); s.computeFreshMetric();`;
+    const restored = masker.rehydrate(reply, r.session);
+    check(`${g} member 'score' restored`, has(restored, "s.score()"));
+    check(`${g} member mask gone`, !has(restored, scoreMask));
+    check(`${g} LLM-invented method passed through`, has(restored, "computeFreshMetric"));
   }
 
   // ====================================================================

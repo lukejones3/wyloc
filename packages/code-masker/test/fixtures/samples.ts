@@ -121,3 +121,42 @@ export function run(): number {
   return scorer.score(21);
 }
 `;
+
+/**
+ * Type-completeness gating fixture. \`count\` is reached only through fully-typed
+ * sites (mask it); \`emit\` has an \`any\`-typed access site, so it must be left
+ * untouched EVERYWHERE — masking the declaration while missing the \`any\` call
+ * would both leak the name and break the code.
+ */
+export const MEMBERS_GATED_TS = `
+export class Telemetry {
+  count: number = 0;
+  emit(): void {
+    this.count++;
+  }
+}
+
+export function typedUse(t: Telemetry): void {
+  t.emit();
+}
+
+export function anyUse(t: any): void {
+  t.emit();
+}
+`;
+
+/**
+ * Resolvable computed (element-access) site: \`level\` is read via \`v["level"]\`
+ * on a well-typed value, so it is masked — declaration AND the string literal.
+ */
+export const MEMBERS_ELEMENT_TS = `
+export class Vault {
+  level: number = 1;
+  rotate(): void {}
+}
+
+export function use(v: Vault): number {
+  v.rotate();
+  return v["level"];
+}
+`;

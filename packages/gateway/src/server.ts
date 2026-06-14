@@ -58,7 +58,7 @@ export function createGateway(config: GatewayConfig): Server {
   const codeMask = new CodeMaskHandle(config, store, log);
   if (config.maskCode) {
     log.info(
-      `Code masking enabled (TS/JS fenced blocks${config.maskCodeMembers ? ", members on" : ""})`,
+      `Code masking enabled (TS/JS fenced blocks in messages${config.maskCodeMembers ? ", members on" : ""})`,
     );
   }
 
@@ -66,7 +66,7 @@ export function createGateway(config: GatewayConfig): Server {
   // files the agent reads on its own — reusing the SQL/code handles + detector.
   const fileReadMask = new FileReadMaskHandle(config, sqlMask, codeMask, log);
   if (config.maskFileReads) {
-    log.info("File-read masking enabled (tool-result content: detector always, SQL/code per toggle)");
+    log.info("File-read masking enabled (raw tool-result file bodies: detector always, SQL/code per toggle)");
   }
 
   const server = createServer((req, res) => {

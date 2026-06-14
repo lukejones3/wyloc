@@ -90,6 +90,20 @@ export class CodeMasker {
           return node;
         }
 
+        // Element-access member: `c["score"]` whose argument resolves to a
+        // masked member -> `c["<mask>"]`, keeping computed access consistent
+        // with the renamed declaration. (Gating guarantees the access resolved.)
+        if (
+          ts.isStringLiteral(node) &&
+          node.parent &&
+          ts.isElementAccessExpression(node.parent) &&
+          node.parent.argumentExpression === node
+        ) {
+          const s = checker.getSymbolAtLocation(node);
+          const mask = s ? maskOf.get(s) : undefined;
+          if (mask) return factory.createStringLiteral(mask);
+        }
+
         // String / no-substitution template literals.
         if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
           if (isModuleSpecifier(node)) {

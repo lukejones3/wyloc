@@ -17,6 +17,19 @@ export interface MaskedSymbol {
   real: string;
 }
 
+/**
+ * Optional member-masking coverage diagnostics, filled when a caller passes the
+ * object. `candidates` are all members that COULD be masked (on an internal,
+ * non-externally-derived class/interface); `masked` are those whose every
+ * access site was fully resolvable; `skipped` are those left untouched because
+ * at least one site was unresolvable (any-typed / computed / object-literal).
+ */
+export interface MemberDiagnostics {
+  candidates: string[];
+  masked: string[];
+  skipped: string[];
+}
+
 type Origin = "relative" | "internal-bare" | "external" | "node";
 
 /** Where does an import's module specifier point? */
@@ -80,6 +93,7 @@ export function collectMaskedSymbols(
   sf: ts.SourceFile,
   checker: ts.TypeChecker,
   cfg: CodeMaskerConfig,
+  diag?: MemberDiagnostics,
 ): Map<ts.Symbol, MaskedSymbol> {
   const masked = new Map<ts.Symbol, MaskedSymbol>();
   const declSymbols = new Set<ts.Symbol>(); // all internal top-level decl symbols
@@ -130,6 +144,21 @@ export function collectMaskedSymbols(
   }
 
   // ── Pass 2b: members of internal classes / interfaces ──
+  //
+  // TYPE-COMPLETENESS GATING. A member is masked ONLY if every access site of
+  // its name can be resolved with confidence. Partial masking is forbidden:
+  // masking a declaration while leaving even one access site unmasked both
+  // leaks the name and breaks the code. So a member is masked at 100% of its
+  // sites or 0%. A site is "unresolvable" when:
+  //   • a property access `x.name` whose `x` is `any`-typed (checker returns no
+  //     symbol — it could be this member, we can't prove otherwise);
+  //   • a computed string access `x["name"]` the checker can't link;
+  //   • an object-literal key contextually typed to the host (resolves to a
+  //     distinct property symbol the symbol-identity rename can't reach).
+  // Sites that resolve to a DIFFERENT concrete symbol (e.g. an external API or
+  // another type's member of the same name) don't block — they aren't this
+  // member and are never renamed. (Fully-dynamic `x[expr]` doesn't name the
+  // member textually, so it can't be attributed and is a documented residual.)
   if (cfg.maskMembers) {
     const reserved = new Set(cfg.reservedMembers);
     const memberHosts: (ts.ClassLikeDeclaration | ts.InterfaceDeclaration)[] = [];
@@ -145,8 +174,14 @@ export function collectMaskedSymbols(
     };
     collectHosts(sf);
 
+    // Candidate members (symbol -> name) + the set of host type symbols.
+    const candidateSyms = new Map<ts.Symbol, string>();
+    const candidateNames = new Set<string>();
+    const hostSyms = new Set<ts.Symbol>();
     for (const host of memberHosts) {
       if (hasExternalHeritage(host, declSymbols, checker)) continue;
+      const hs = host.name ? sym(checker, host.name) : undefined;
+      if (hs) hostSyms.add(hs);
       for (const member of host.members) {
         if (!MASKABLE_MEMBER_KINDS.has(member.kind)) continue;
         const modifiers = ts.canHaveModifiers(member) ? ts.getModifiers(member) : undefined;
@@ -154,10 +189,63 @@ export function collectMaskedSymbols(
         const name = member.name;
         if (!name || !ts.isIdentifier(name)) continue; // skip computed / string keys
         if (reserved.has(name.text)) continue;
-        record("member", name);
+        const s = sym(checker, name);
+        if (!s) continue;
+        if (!candidateSyms.has(s)) candidateSyms.set(s, name.text);
+        candidateNames.add(name.text);
+      }
+    }
+
+    if (candidateSyms.size > 0) {
+      // Names with at least one unresolvable access site — cannot be masked.
+      const blocked = new Set<string>();
+      const unresolvable = (s: ts.Symbol | undefined) => s === undefined;
+
+      const walk = (node: ts.Node) => {
+        if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name) && candidateNames.has(node.name.text)) {
+          if (unresolvable(checker.getSymbolAtLocation(node.name))) blocked.add(node.name.text);
+        } else if (ts.isQualifiedName(node) && candidateNames.has(node.right.text)) {
+          if (unresolvable(checker.getSymbolAtLocation(node.right))) blocked.add(node.right.text);
+        } else if (
+          ts.isElementAccessExpression(node) &&
+          ts.isStringLiteralLike(node.argumentExpression) &&
+          candidateNames.has(node.argumentExpression.text)
+        ) {
+          if (unresolvable(checker.getSymbolAtLocation(node.argumentExpression))) {
+            blocked.add(node.argumentExpression.text);
+          }
+        } else if (ts.isObjectLiteralExpression(node)) {
+          // Keys of a literal contextually typed to a masked host resolve to a
+          // distinct property symbol the symbol-identity rename can't reach.
+          const ctx = symbolOfType(checker.getContextualType(node));
+          if (ctx && hostSyms.has(ctx)) {
+            for (const prop of node.properties) {
+              const pn = prop.name;
+              if (pn && ts.isIdentifier(pn) && candidateNames.has(pn.text)) blocked.add(pn.text);
+            }
+          }
+        }
+        ts.forEachChild(node, walk);
+      };
+      walk(sf);
+
+      for (const [s, name] of candidateSyms) {
+        diag?.candidates.push(name);
+        if (blocked.has(name)) {
+          diag?.skipped.push(name);
+          continue;
+        }
+        if (!masked.has(s)) masked.set(s, { kind: "member", real: name });
+        diag?.masked.push(name);
       }
     }
   }
 
   return masked;
+}
+
+/** The declaring symbol of a (possibly aliased) type, if any. */
+function symbolOfType(type: ts.Type | undefined): ts.Symbol | undefined {
+  if (!type) return undefined;
+  return type.aliasSymbol ?? type.getSymbol();
 }

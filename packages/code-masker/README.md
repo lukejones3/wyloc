@@ -57,10 +57,16 @@ packages aren't mislabeled:
 `resolveConfig(input)` ships sensible defaults; every knob deciding *what* is
 proprietary and *how* a mask is shaped lives in `CodeMaskerConfig`. Notable knobs:
 
-- `maskMembers` — **default `false`**. Member (method/property) masking is correct
-  on well-typed code, but accesses on `any`-typed values can't be resolved by the
-  checker, which would leak the name at those sites (partial masking). Enable on
-  well-typed codebases.
+- `maskMembers` — **default `false`** (opt-in). When on, member (method/property)
+  masking is **type-completeness gated**: a member is masked only if *every* access
+  site of its name is confidently resolvable (fully-typed property/element access).
+  If any site is unresolvable — an `any`-typed access, a computed string access the
+  checker can't link, or an object-literal key contextually typed to the host — the
+  member is left **completely untouched**. Masking is therefore all-or-nothing per
+  member: never partial, so it never leaks the name or breaks the code. On a real
+  mixed codebase (this repo) ~63% of candidate members are fully resolvable and
+  masked; the rest are safely skipped. (Fully-dynamic `obj[expr]` access doesn't
+  name the member textually and is a documented residual.)
 - `internalScopes`, `internalDomains`, `internalTlds`, `internalPathPatterns` —
   broaden what counts as internal infrastructure.
 - `maskBucket2`, `bucket2Patterns`, `bucket2Substrings` — opt-in fuzzy string masking.
@@ -76,8 +82,11 @@ proprietary and *how* a mask is shaped lives in `CodeMaskerConfig`. Notable knob
 
 ## Known limitations
 
-- `maskMembers` is opt-in/conservative (see above); object-literal keys that resolve
-  to a masked member may not always rename.
+- `maskMembers` is opt-in and conservative by design (see above): it skips a member
+  rather than risk partial masking, so coverage trades off against safety. Members
+  reached only through fully-typed sites are masked; the rest are skipped intact.
+- Fully-dynamic member access (`obj[expr]` with a non-literal key) can't be
+  attributed to a member by name; it neither blocks nor is rewritten.
 - TS/JS only by design.
 
 ## Test

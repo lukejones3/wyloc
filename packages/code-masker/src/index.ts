@@ -16,7 +16,7 @@ export {
   type CodeMaskerConfig,
   type CodeMaskerConfigInput,
 } from "./config.js";
-export { collectMaskedSymbols, importOrigin, type MaskedSymbol } from "./classify.js";
+export { collectMaskedSymbols, importOrigin, type MaskedSymbol, type MemberDiagnostics } from "./classify.js";
 export { maskStringValue, type StringHit, type StringMaskResult } from "./strings.js";
 export {
   maskIdentifier,
