@@ -66,6 +66,19 @@ export interface GatewayConfig {
   maskSql: boolean;
   /** SQL dialect handed to the masker's parser. */
   sqlDialect: string;
+  /**
+   * Mask proprietary TS/JS identifiers (internal classes/functions/types),
+   * internal URLs/hosts/paths, and strip comments in fenced code blocks via
+   * @wyloc/code-masker, in addition to detector secret-swapping. Default OFF.
+   * Pure in-process (no worker) — nothing to fail to start.
+   */
+  maskCode: boolean;
+  /**
+   * Also mask methods/properties of internal classes (members). Default OFF —
+   * member access on `any`-typed values can't be resolved, so masking would be
+   * inconsistent. Enable for well-typed codebases. See @wyloc/code-masker.
+   */
+  maskCodeMembers: boolean;
 }
 
 function envBool(name: string, fallback: boolean): boolean {
@@ -115,5 +128,7 @@ export function loadConfig(): GatewayConfig {
     verbose: envBool("WYLOC_VERBOSE", true),
     maskSql: envBool("WYLOC_MASK_SQL", false),
     sqlDialect: envStr("WYLOC_SQL_DIALECT", "postgres"),
+    maskCode: envBool("WYLOC_MASK_CODE", false),
+    maskCodeMembers: envBool("WYLOC_MASK_CODE_MEMBERS", false),
   };
 }

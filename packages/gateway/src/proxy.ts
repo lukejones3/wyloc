@@ -23,6 +23,7 @@ import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./session.js";
 import type { SqlMaskHandle } from "./sql-mask.js";
+import type { CodeMaskHandle } from "./code-mask.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import { runDetectorSwap } from "./swap-request.js";
 import {
@@ -53,6 +54,12 @@ export interface ProxyContext {
    * couldn't start (detector swap still runs).
    */
   sqlMask: SqlMaskHandle | null;
+  /**
+   * Optional TS/JS code-masking handle. When present and enabled, proprietary
+   * identifiers + internal infra in fenced code blocks are masked before the
+   * detector swap. Null when maskCode is off. Pure in-process (no worker).
+   */
+  codeMask: CodeMaskHandle | null;
 }
 
 /**
@@ -63,7 +70,7 @@ export async function forward(
   res: ServerResponse,
   ctx: ProxyContext,
 ): Promise<void> {
-  const { config, log, path, store, inspect, sqlMask, adapter, upstreamBaseUrl } = ctx;
+  const { config, log, path, store, inspect, sqlMask, codeMask, adapter, upstreamBaseUrl } = ctx;
   const started = Date.now();
 
   // 1. Buffer the request body.
@@ -86,6 +93,20 @@ export async function forward(
         log.debug(
           `sql-mask: ${sqlOutcome.blocks} SQL block(s), ` +
             `${sqlOutcome.masked} identifier/value(s) masked in ${path}`,
+        );
+      }
+    }
+
+    // Code-masking pass (optional): mask proprietary TS/JS identifiers + internal
+    // infra + strip comments in fenced code blocks, also BEFORE the detector
+    // swap. Mappings fold into the same store, so the response rehydrates them.
+    if (codeMask) {
+      const codeOutcome = await codeMask.maskBody(adapter, bodyForSwap, store);
+      bodyForSwap = codeOutcome.body;
+      if (codeOutcome.blocks > 0) {
+        log.debug(
+          `code-mask: ${codeOutcome.blocks} TS/JS block(s), ` +
+            `${codeOutcome.masked} identifier/value(s) masked in ${path}`,
         );
       }
     }

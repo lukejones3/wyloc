@@ -68,6 +68,16 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   `role:"tool"` and never touches `tool_calls`), appends the directive to the
   system message, and rehydrates `choices[].delta.content` from the
   `chat.completion.chunk` stream. `WYLOC_MASK_SQL` works on both providers.
+- **Phase 6 — TS/JS code identifier masking** ✅ (opt-in,
+  `WYLOC_MASK_CODE=true`). Alongside the SQL pass and before the detector swap,
+  TS/JS inside fenced code blocks (```ts ```tsx ```js ```jsx …) is run through
+  [`@wyloc/code-masker`](../code-masker): internally-defined classes/functions/
+  types/imports get semantic-preserving masks (`BillingReconciler → Class_<hash>`),
+  internal URLs/hosts/IPs/paths are masked, comments are stripped, and hardcoded
+  secrets are swapped — while external/library APIs (React, lodash, Node) and the
+  business logic pass through so the model can still help. Mask pairs fold into
+  the same session store and rehydrate in the response. Pure in-process (no
+  worker). Works on both providers.
 
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).
@@ -135,6 +145,11 @@ npm test --workspace @wyloc/gateway   # runs all six below
   to the system message, while assistant `tool_calls` and a `role:"tool"`
   message stay byte-intact; the `chat.completion.chunk` stream rehydrates
   `delta.content` (both a semantic SQL mask and a `WYLOC_MOCK_` token).
+- `test-code-mask.mjs` — Phase 6 (`WYLOC_MASK_CODE=true`): a prompt with a
+  fenced ```ts block (proprietary class/function/import, internal URL, AWS-key
+  secret, a comment) is masked/stripped/swapped before forwarding — external
+  imports (React) survive — and the masked class echoed back by the fake
+  upstream rehydrates to its real name in the stream.
 
 ## Configuration
 
@@ -151,6 +166,8 @@ later becomes enterprise central policy). Nothing is hardcoded.
 | `WYLOC_INJECT_SYSTEM_PROMPT` | `true` | Inject the verbatim-echo `system` directive |
 | `WYLOC_MASK_SQL` | `false` | Mask SQL identifiers + scrub literals via @wyloc/sql-masker (needs Python3 + sqlglot) |
 | `WYLOC_SQL_DIALECT` | `postgres` | SQL dialect for the masker's parser (postgres/snowflake/bigquery/…) |
+| `WYLOC_MASK_CODE` | `false` | Mask TS/JS identifiers + internal infra + strip comments in fenced code blocks via @wyloc/code-masker (pure, no worker) |
+| `WYLOC_MASK_CODE_MEMBERS` | `false` | Also mask methods/properties of internal classes (well-typed code only) |
 | `WYLOC_VERBOSE` | `true` | Operational logging (never logs secrets) |
 
 ## Privacy model

@@ -13,6 +13,7 @@ import { Logger } from "./logger.js";
 import { forward, sendGatewayError, type ProxyContext } from "./proxy.js";
 import { SessionStore } from "./session.js";
 import { SqlMaskHandle } from "./sql-mask.js";
+import { CodeMaskHandle } from "./code-mask.js";
 import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
 
@@ -48,6 +49,15 @@ export function createGateway(config: GatewayConfig): Server {
           ? "SQL masking enabled (sqlglot worker ready)"
           : "SQL masking requested but the sqlglot worker is unavailable — falling back to detector-only",
       ),
+    );
+  }
+
+  // Optional TS/JS code masking (off unless config.maskCode). Pure in-process —
+  // no worker, so no readiness handshake.
+  const codeMask = new CodeMaskHandle(config, store, log);
+  if (config.maskCode) {
+    log.info(
+      `Code masking enabled (TS/JS fenced blocks${config.maskCodeMembers ? ", members on" : ""})`,
     );
   }
 
@@ -95,6 +105,7 @@ export function createGateway(config: GatewayConfig): Server {
       adapter,
       upstreamBaseUrl,
       sqlMask: config.maskSql ? sqlMask : null,
+      codeMask: config.maskCode ? codeMask : null,
     };
 
     if (isMessages || isCountTokens || isChat || isOpenAiOther || path.startsWith("/v1/")) {
@@ -113,6 +124,9 @@ export function createGateway(config: GatewayConfig): Server {
   });
 
   // Tear down the worker subprocess when the server closes.
-  server.on("close", () => sqlMask.close());
+  server.on("close", () => {
+    sqlMask.close();
+    codeMask.close();
+  });
   return server;
 }

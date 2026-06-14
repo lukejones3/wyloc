@@ -1,0 +1,31 @@
+{
+  "name": "@wyloc/code-masker",
+  "version": "0.1.0",
+  "description": "AST-based, semantic-preserving TypeScript/JavaScript identifier masking for prompt-time DLP. Masks proprietary classes/functions/types and internal URLs/paths/secrets before code is sent to an LLM, preserves business logic and external/library APIs, strips comments, and is reversible in-session.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@wyloc/detector": "*",
+    "typescript": "^5.7.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx test/run.ts",
+    "test:watch": "tsx --watch test/run.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.2"
+  }
+}
