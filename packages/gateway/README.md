@@ -96,6 +96,68 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).
 
+## Standalone install (binary)
+
+The gateway ships as a **standalone executable** — no Node/npm/Python install
+required on the target machine.
+
+```bash
+# Build a self-contained distribution for this platform
+node packages/gateway/scripts/build-binary.mjs        # → dist-bin/<platform>/
+```
+
+The distribution is `wyloc` (a Node SEA binary, pinned **Node 22 LTS**) plus a
+bundled `runtime/` that makes the **differentiators work out-of-the-box with no
+machine prerequisites**:
+
+```
+<install>/
+  wyloc                    ← the binary
+  runtime/python/…         ← relocatable Python + sqlglot  → SQL masking works
+  runtime/sql/worker.py    ← the sqlglot sidecar
+  runtime/re2/             ← prebuilt RE2  → raw-regex custom patterns work
+```
+
+Everything is resolved **relative to the binary** (`src/runtime.ts`), so the
+install is relocatable; if a runtime piece is missing the gateway **degrades**
+(detector-only / constrained-patterns-only) rather than failing. Verified on a
+clean machine with no system Python/RE2: SQL identifiers and raw-regex patterns
+both mask. Cross-platform builds run the same script per OS in CI (codesign on
+macOS, signtool on Windows; pure-Python sqlglot needs no per-OS compile).
+
+### CLI
+
+```
+wyloc                     run the gateway (foreground)
+wyloc setup [--yes]       detect Claude Code / Codex, show changes, point them at the gateway
+wyloc unsetup             revert exactly what setup changed (originals restored)
+wyloc service <cmd>       install|uninstall|start|stop|status|enable|disable
+wyloc status              gateway health + setup status
+```
+
+`setup` is **detect → show → confirm → apply**, merging
+`ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` into each tool's `settings.json` (existing
+settings preserved; changes recorded for a clean `unsetup`).
+
+`service` installs a **launchd agent** (macOS) or **systemd user service**
+(Linux) that **starts on login and restarts on crash** (`KeepAlive` /
+`Restart=always`).
+
+### Central policy (local OR remote)
+
+The config loads from a local `wyloc.json` (`WYLOC_CONFIG`) **or a URL**
+(`WYLOC_CONFIG_URL`) so a company can centralize policy. Remote policy uses
+**last-known-good with a fail-closed floor**:
+
+| Situation | Behavior |
+|---|---|
+| reachable + valid | use it; cache as last-known-good |
+| reachable + **invalid** | **fail-closed** (refuse to start) |
+| unreachable + cache | run the **cached** policy (loud log) — dev keeps working |
+| unreachable + **no cache** | **fail-closed** (never run with no policy) |
+
+A background refresh keeps the cache current (applies on next restart).
+
 ## Run it
 
 The detector must be built once (the gateway imports its compiled output):

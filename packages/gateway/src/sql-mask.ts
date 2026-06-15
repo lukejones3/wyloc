@@ -20,6 +20,7 @@
  */
 
 import { SqlMasker, SqlglotWorker, resolveConfig } from "@wyloc/sql-masker";
+import { bundledPython, bundledSqlWorker } from "./runtime.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -63,7 +64,16 @@ export class SqlMaskHandle {
     let masker: SqlMasker | null = null;
     let ready: Promise<boolean> = Promise.resolve(false);
     try {
-      worker = new SqlglotWorker();
+      // Prefer the bundled Python + worker (standalone install) so SQL masking
+      // works with NO system Python; fall back to defaults (system python3 +
+      // packaged worker.py) otherwise. The WORKER does the spawning, so the
+      // bundled paths must reach it. Either way, a startup failure degrades.
+      const py = bundledPython();
+      const workerPy = bundledSqlWorker();
+      worker = new SqlglotWorker({
+        ...(py ? { pythonPath: py } : {}),
+        ...(workerPy ? { workerPath: workerPy } : {}),
+      });
       // Share the store's salt so a secret seen in SQL and in prose maps to
       // the same mock as the detector pass produces.
       masker = new SqlMasker(

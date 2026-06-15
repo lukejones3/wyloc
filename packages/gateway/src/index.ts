@@ -10,23 +10,29 @@
 import { loadConfig } from "./config.js";
 import { Logger } from "./logger.js";
 import { createGateway } from "./server.js";
-import { loadWylocConfig, WylocConfigError } from "./wyloc/index.js";
+import { WylocConfigError } from "./wyloc/index.js";
+import { loadFromSource, startBackgroundRefresh } from "./wyloc/remote.js";
 import { applyWyloc } from "./wyloc/apply.js";
+import { runCli } from "./cli.js";
 
-function main(): void {
+async function main(): Promise<void> {
   let config = loadConfig();
 
-  // Company config (wyloc.json). FAIL-CLOSED: any problem stops startup with a
-  // specific report — a security gateway never runs on a broken config.
+  // Company config from a local path OR a remote URL. FAIL-CLOSED: any problem
+  // stops startup with a specific report — a security gateway never runs on a
+  // broken config (remote source uses last-known-good with a fail-closed floor).
   try {
-    const wyloc = loadWylocConfig();
+    const { loaded: wyloc, origin } = await loadFromSource();
     if (wyloc) {
       config = applyWyloc(config, wyloc);
       const pc = wyloc.customPatterns.length;
+      const via = origin === "url-cache" ? ` (LAST-KNOWN-GOOD cache — remote unreachable)` : origin === "url" ? ` (remote)` : "";
       console.error(
-        `[wyloc] loaded ${wyloc.path} — ${pc} custom pattern${pc === 1 ? "" : "s"}, ` +
+        `[wyloc] loaded ${wyloc.path}${via} — ${pc} custom pattern${pc === 1 ? "" : "s"}, ` +
           `${wyloc.internalScopes.length} internal scope(s), ${wyloc.blocklistSubstrings.length} blocklist term(s)`,
       );
+      // Keep the cache fresh for URL sources (applies on next restart).
+      startBackgroundRefresh(process.env, 5 * 60_000, (m) => console.error(m));
     }
   } catch (err) {
     if (err instanceof WylocConfigError) {
@@ -70,4 +76,19 @@ function main(): void {
   }
 }
 
-main();
+// Dispatch: a CLI subcommand (setup/unsetup/service/status/help) is handled by
+// runCli; no args or `start` falls through to running the gateway.
+runCli(process.argv.slice(2))
+  .then((handled) => {
+    if (!handled) {
+      return main().catch((err) => {
+        console.error("[wyloc-gateway] fatal startup error:", err);
+        process.exit(1);
+      });
+    }
+    return undefined;
+  })
+  .catch((err) => {
+    console.error("[wyloc] error:", err);
+    process.exit(1);
+  });

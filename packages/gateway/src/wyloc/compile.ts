@@ -9,17 +9,25 @@ import { createRequire } from "node:module";
 import type { CompiledPattern } from "@wyloc/detector";
 import type { CustomPattern, Format, FormatKind, KnownFormat, Match } from "./schema.js";
 import { findReDoSRisk } from "./redos.js";
+import { bundledRe2Dir } from "../runtime.js";
 
 const require = createRequire(import.meta.url);
 
-/** Lazy, cached RE2 load. Returns the constructor or null if unavailable. */
+/** Lazy, cached RE2 load. Prefers the bundled prebuilt (standalone install),
+ *  falls back to a system/devDependency re2, else null (raw regex fail-closes). */
 let re2Cache: { ctor: unknown } | undefined;
 export function loadRe2(): unknown | null {
   if (re2Cache === undefined) {
-    try {
-      re2Cache = { ctor: require("re2") };
-    } catch {
-      re2Cache = { ctor: null };
+    re2Cache = { ctor: null };
+    const bundled = bundledRe2Dir();
+    for (const spec of [bundled, "re2"]) {
+      if (!spec) continue;
+      try {
+        re2Cache = { ctor: require(spec) };
+        break;
+      } catch {
+        /* try next source */
+      }
     }
   }
   return re2Cache.ctor;
