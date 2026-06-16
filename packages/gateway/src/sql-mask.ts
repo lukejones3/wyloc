@@ -114,7 +114,7 @@ export class SqlMaskHandle {
     if (!this.masker) return { out: sql, n: 0 };
     try {
       const r = await this.masker.mask(sql);
-      const pairs = r.session.entries().map((e) => ({ real: e.real, mock: e.mask }));
+      const pairs = r.session.entries().map((e: { real: string; mask: string }) => ({ real: e.real, mock: e.mask }));
       store.addPairs(pairs);
       return { out: r.masked, n: pairs.length };
     } catch {

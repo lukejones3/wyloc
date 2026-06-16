@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "test": "npm test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build:packages && npm run build -w @wyloc/gateway",
+    "build:packages": "npm run build -w @wyloc/detector && npm run build -w @wyloc/sql-masker -w @wyloc/code-masker -w @wyloc/browser-extension --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }
