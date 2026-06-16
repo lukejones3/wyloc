@@ -1,0 +1,123 @@
+name: build-verify
+
+# Build the standalone gateway distribution AND run the load-bearing
+# clean-machine verification (SQL + raw-regex out-of-the-box) on EACH target,
+# natively. "Works out of the box" is proven per platform here, not asserted.
+#
+# Trigger strategy:
+#   • push to main / manual dispatch → full native build+verify matrix (heavy).
+#   • pull_request                   → lightweight test suite only (fast).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Fast, comprehensive JS+Python test suite (also runs on PRs) ──────────────
+  test:
+    name: test suites (linux-x64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "sqlglot>=25,<31"   # enables the SQL test suites
+      - run: npm ci
+      - run: npm run build
+      - name: Run all package test suites
+        run: |
+          npm test --workspace @wyloc/detector
+          npm test --workspace @wyloc/code-masker
+          npm test --workspace @wyloc/sql-masker
+          npm test --workspace @wyloc/gateway
+
+  # ── Native per-platform build + clean-machine verification ───────────────────
+  build-verify:
+    # Heavy matrix: main + manual dispatch only (not on every PR).
+    if: github.event_name != 'pull_request'
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # All targets use NATIVE GitHub-hosted runners → natively run-verified.
+          - { target: darwin-arm64, os: macos-14 }      # Apple Silicon
+          - { target: darwin-x64,   os: macos-13 }      # Intel
+          - { target: linux-x64,    os: ubuntu-24.04 }
+          - { target: win-x64,      os: windows-2022 }
+          # linux-arm64: GitHub's hosted arm64 Linux runner (GA 2025; free for
+          # public repos). This makes linux-arm64 NATIVELY run-verified too.
+          # If your account lacks arm64-runner access, swap `os` for a QEMU
+          # fallback job (build natively-emulated + smoke test) and re-label it
+          # "cross-built (QEMU), run-verification pending real hardware".
+          - { target: linux-arm64,  os: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
+      # Speed up repeat runs: cache the pinned Node 22 + python-build-standalone.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/wyloc-build
+          key: wyloc-build-${{ matrix.target }}-node22.14.0-py3.12.8
+
+      - run: npm ci
+
+      # 1. Build the FULL distribution: SEA binary (pinned Node 22 LTS) + bundled
+      #    runtime (relocatable Python + sqlglot, worker.py, prebuilt RE2).
+      - name: Build distribution
+        run: node packages/gateway/scripts/build-binary.mjs --platform ${{ matrix.target }}
+
+      # 2. THE load-bearing check: clean machine (no system Python/Node) →
+      #    healthz + secret mask + SQL mask (bundled Python) + raw-regex (bundled
+      #    RE2). Fails the job loudly if the differentiator doesn't work here.
+      - name: Clean-machine verification (SQL + RE2 out-of-the-box)
+        run: node packages/gateway/scripts/verify-binary.mjs --platform ${{ matrix.target }}
+
+      # 3. Pure-JS test suites on every platform (catch platform JS breakage).
+      #    The Python-dependent suites run in the `test` job; the per-platform SQL
+      #    proof is the verification above (it uses the BUNDLED Python).
+      - name: Pure-JS test suites
+        run: |
+          npm test --workspace @wyloc/detector
+          npm test --workspace @wyloc/code-masker
+
+      # 4. Upload the built distribution so any platform can be downloaded/tested.
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: wyloc-${{ matrix.target }}
+          path: packages/gateway/dist-bin/${{ matrix.target }}
+          retention-days: 14
+          if-no-files-found: error
+
+      # 5. Per-target line in the run summary — unambiguous confidence level.
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ **${{ matrix.target }}** — natively built + run-verified on \`${{ matrix.os }}\` (SQL + raw-regex masking proven out-of-the-box)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ **${{ matrix.target }}** — FAILED on \`${{ matrix.os }}\` (build or clean-machine SQL/RE2 verification did not pass)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ── Signing note (no real certs in CI; hooks live in build-binary.mjs) ───────
+  # CI binaries are ad-hoc/unsigned for testing. Distribution signing is a
+  # later fill-in-the-secret step: add APPLE_SIGNING_IDENTITY / APPLE_ID /
+  # APPLE_TEAM_ID / APPLE_APP_SPECIFIC_PASSWORD (macOS notarization) and
+  # WINDOWS_CERT_PFX / WINDOWS_CERT_PASSWORD (Authenticode) as repo secrets and
+  # wire them where build-binary.mjs marks the signing hooks — no rebuild needed.
