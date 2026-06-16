@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 
 import { loadWylocConfig, WylocConfigError } from "./src/wyloc/load.ts";
 import { findReDoSRisk } from "./src/wyloc/redos.ts";
-import { compilePattern } from "./src/wyloc/compile.ts";
+import { compilePattern, loadRe2 } from "./src/wyloc/compile.ts";
 import { applyWyloc } from "./src/wyloc/apply.ts";
 import { loadConfig } from "./src/config.ts";
 import { scan, buildSwap, rehydrate } from "@wyloc/detector";
@@ -135,10 +135,19 @@ expectErr("catastrophic raw regex rejected at load",
 expectErr("raw regex requires advanced:true",
   { version: 1, patterns: [{ name: "r", match: { type: "regex", source: "TKT-\\d{4}" }, examples: { match: ["TKT-1234"] } }] },
   "advanced");
-// Safe raw regex: rejected here ONLY because RE2 isn't installed (fail-closed).
-expectErr("safe raw regex fail-closed without RE2",
-  { version: 1, patterns: [{ name: "r", match: { type: "regex", advanced: true, source: "TKT-\\d{4}" }, examples: { match: ["TKT-1234"] } }] },
-  "RE2");
+// Safe raw regex depends on RE2 availability (env-dependent, so test BOTH):
+//   • RE2 present  → compiles and loads (the real raw-regex path; CI/Node-22).
+//   • RE2 absent   → FAIL-CLOSED with an RE2 message (e.g. Node-25 sandbox).
+{
+  const rawCfg = { version: 1, patterns: [{ name: "r", match: { type: "regex", advanced: true, source: "TKT-\\d{4}" }, examples: { match: ["TKT-1234"] } }] };
+  const re2Available = !!loadRe2();
+  const { loaded, err } = tryLoad(rawCfg);
+  if (re2Available) {
+    ok("safe raw regex COMPILES when RE2 is available", !err && loaded && loaded.customPatterns.length === 1, err && String(err.problems));
+  } else {
+    ok("safe raw regex FAIL-CLOSED without RE2", err instanceof WylocConfigError && err.problems.some((p) => p.includes("RE2")), "expected an RE2 fail-closed error");
+  }
+}
 
 // ── 7. Precedence: wyloc.json policy overrides env ─────────────────────
 console.error("\n── precedence (config > env) ─────────────────────");

@@ -10,6 +10,7 @@
     "test": "npm test --workspaces --if-present",
     "build": "npm run build:packages && npm run build -w @wyloc/gateway",
     "build:packages": "npm run build -w @wyloc/detector && npm run build -w @wyloc/sql-masker -w @wyloc/code-masker -w @wyloc/browser-extension --if-present",
+    "build:gateway": "npm run build -w @wyloc/detector && npm run build -w @wyloc/sql-masker -w @wyloc/code-masker && npm run build -w @wyloc/gateway",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

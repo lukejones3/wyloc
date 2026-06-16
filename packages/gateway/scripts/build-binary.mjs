@@ -106,8 +106,12 @@ async function main() {
   if (!existsSync(nodeBin)) fail(`Node binary not found at ${nodeBin}`);
 
   // ── 2. Build workspaces + esbuild bundle (ESM→CJS, import.meta shim) ─────────
-  step("build workspaces + bundle");
-  shell(`npm run build --silent`, { cwd: REPO });
+  // build:gateway = the binary's dependency chain ONLY (detector → sql-masker/
+  // code-masker → gateway). Deliberately NOT the full `build`: the binary does
+  // not include @wyloc/browser-extension, whose own esbuild bundling is
+  // unrelated (and has a Windows path-alias quirk we must not drag in here).
+  step("build workspace packages (gateway chain)");
+  shell(`npm run build:gateway --silent`, { cwd: REPO });
   const bundle = join(CACHE, "gateway.cjs");
   // esbuild JS API (cross-platform; the bin is a native binary, not a node script).
   await esbuild.build({
