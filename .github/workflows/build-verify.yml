@@ -14,7 +14,10 @@ on:
 
 concurrency:
   group: build-verify-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs (save minutes), but let push/dispatch runs on main
+  # COMPLETE — otherwise rapid pushes cancel in-flight matrix jobs (the slower
+  # darwin-x64 Intel runner kept getting cancelled mid-run before finishing).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -25,8 +28,8 @@ jobs:
     name: test suites (linux-x64)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: "22" }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
@@ -62,8 +65,8 @@ jobs:
           # "cross-built (QEMU), run-verification pending real hardware".
           - { target: linux-arm64,  os: ubuntu-24.04-arm }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: "22" }
 
       # Speed up repeat runs: cache the pinned Node 22 + python-build-standalone.
@@ -74,18 +77,26 @@ jobs:
 
       - run: npm ci
 
-      # 1. Build the FULL distribution: SEA binary (pinned Node 22 LTS) + bundled
+      # 1. Build the gateway's dependency chain IN ORDER (detector →
+      #    sql-masker/code-masker → gateway). A clean checkout has no dist/, so
+      #    this must precede the binary bundle or esbuild can't resolve @wyloc/*.
+      #    NOT the full `build`: the binary excludes @wyloc/browser-extension
+      #    (its own esbuild bundling is unrelated + has a Windows path quirk).
+      - name: Build workspace packages (gateway chain)
+        run: npm run build:gateway
+
+      # 2. Build the FULL distribution: SEA binary (pinned Node 22 LTS) + bundled
       #    runtime (relocatable Python + sqlglot, worker.py, prebuilt RE2).
       - name: Build distribution
         run: node packages/gateway/scripts/build-binary.mjs --platform ${{ matrix.target }}
 
-      # 2. THE load-bearing check: clean machine (no system Python/Node) →
+      # 3. THE load-bearing check: clean machine (no system Python/Node) →
       #    healthz + secret mask + SQL mask (bundled Python) + raw-regex (bundled
       #    RE2). Fails the job loudly if the differentiator doesn't work here.
       - name: Clean-machine verification (SQL + RE2 out-of-the-box)
         run: node packages/gateway/scripts/verify-binary.mjs --platform ${{ matrix.target }}
 
-      # 3. Pure-JS test suites on every platform (catch platform JS breakage).
+      # 4. Pure-JS test suites on every platform (catch platform JS breakage).
       #    The Python-dependent suites run in the `test` job; the per-platform SQL
       #    proof is the verification above (it uses the BUNDLED Python).
       - name: Pure-JS test suites
@@ -93,7 +104,7 @@ jobs:
           npm test --workspace @wyloc/detector
           npm test --workspace @wyloc/code-masker
 
-      # 4. Upload the built distribution so any platform can be downloaded/tested.
+      # 5. Upload the built distribution so any platform can be downloaded/tested.
       - name: Upload distribution
         uses: actions/upload-artifact@v4
         with:
@@ -102,7 +113,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      # 5. Per-target line in the run summary — unambiguous confidence level.
+      # 6. Per-target line in the run summary — unambiguous confidence level.
       - name: Summary
         if: always()
         shell: bash
