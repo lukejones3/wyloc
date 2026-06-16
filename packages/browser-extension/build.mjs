@@ -12,12 +12,15 @@
 
 import * as esbuild from "esbuild";
 import { cp, mkdir, rm } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 // Resolve the detector's TypeScript source so esbuild bundles it directly.
 // This means a `src/` edit in @wyloc/detector is picked up by a single
 // `npm run build --workspace @wyloc/browser-extension` without a separate
-// detector rebuild step.
-const detectorSrc = new URL("../detector/src/index.ts", import.meta.url).pathname;
+// detector rebuild step. Use fileURLToPath (not .pathname) so the alias is a
+// real OS path on Windows too — .pathname yields "/D:/…" which esbuild can't
+// resolve (this was the original win-x64 build break).
+const detectorSrc = fileURLToPath(new URL("../detector/src/index.ts", import.meta.url));
 
 const watch = process.argv.includes("--watch");
 const outdir = "dist";

@@ -8,6 +8,7 @@
  *    error, never binds the port).
  */
 
+import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -47,7 +48,7 @@ function startUpstream() {
 }
 function startGateway(configPath, port) {
   return spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
-    cwd: new URL(".", import.meta.url).pathname,
+    cwd: fileURLToPath(new URL(".", import.meta.url)),
     env: { ...process.env, WYLOC_GATEWAY_PORT: String(port), WYLOC_UPSTREAM_BASE_URL: `http://127.0.0.1:${UPSTREAM_PORT}`, WYLOC_CONFIG: configPath, WYLOC_VERBOSE: "true" },
     stdio: ["ignore", "inherit", "pipe"],
   });

@@ -6,6 +6,7 @@
  * validity. Phase 3 (rehydration + round-trip) is added in the next phase.
  */
 import ts from "typescript";
+import { fileURLToPath } from "node:url";
 import { CodeMasker, resolveConfig } from "../src/index.js";
 import { APP_TS, EXTERNAL_ONLY_TS, MEMBERS_TS, MEMBERS_GATED_TS, MEMBERS_ELEMENT_TS, TEMPLATE_TS } from "./fixtures/samples.js";
 
@@ -202,7 +203,9 @@ function main(): void {
 
   // ---- Real repo file as a real-shaped fixture ----
   {
-    const src = ts.sys.readFile(new URL("../../gateway/src/session.ts", import.meta.url).pathname);
+    // fileURLToPath (not .pathname) so this resolves on Windows too — .pathname
+    // yields "/D:/…" which the OS can't open.
+    const src = ts.sys.readFile(fileURLToPath(new URL("../../gateway/src/session.ts", import.meta.url)));
     if (src) {
       const r = CodeMasker.create().mask(src, "session.ts");
       const m = r.masked;

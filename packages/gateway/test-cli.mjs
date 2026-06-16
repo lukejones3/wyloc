@@ -2,6 +2,7 @@
  * CLI setup/unsetup + service-definition tests.
  * Run with: node --import tsx test-cli.mjs
  */
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -17,7 +18,7 @@ const STATE = join(base, "state");
 mkdirSync(join(HOME, ".claude"), { recursive: true });
 writeFileSync(join(HOME, ".claude", "settings.json"), JSON.stringify({ theme: "dark" })); // pre-existing
 
-const ENTRY = join(new URL(".", import.meta.url).pathname, "src", "index.ts");
+const ENTRY = join(fileURLToPath(new URL(".", import.meta.url)), "src", "index.ts");
 function wyloc(...args) {
   return execFileSync(process.execPath, ["--import", "tsx", ENTRY, ...args], {
     env: { ...process.env, HOME, WYLOC_STATE_DIR: STATE }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],

@@ -11,6 +11,7 @@
  *   D. OpenAI role:"tool" with a secret    → masked; tool_call_id + tool_calls intact
  */
 
+import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -69,7 +70,7 @@ function startUpstream() {
 
 function startGateway() {
   return spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
-    cwd: new URL(".", import.meta.url).pathname,
+    cwd: fileURLToPath(new URL(".", import.meta.url)),
     env: {
       ...process.env,
       WYLOC_GATEWAY_PORT: String(GATEWAY_PORT),
