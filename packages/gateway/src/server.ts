@@ -17,15 +17,17 @@ import { CodeMaskHandle } from "./code-mask.js";
 import { FileReadMaskHandle } from "./mask-file-reads.js";
 import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
+import { ResponsesAdapter } from "./adapters/responses.js";
 
 /** Anthropic Messages endpoints (masked). */
 const MESSAGES_PATH = "/v1/messages";
 const COUNT_TOKENS_PATH = "/v1/messages/count_tokens";
 /** OpenAI Chat Completions endpoint (masked). */
 const CHAT_PATH = "/v1/chat/completions";
+/** OpenAI Responses endpoint (masked — the wire format Codex uses). */
+const RESPONSES_PATH = "/v1/responses";
 /** Other OpenAI-only paths — forwarded to OpenAI, not masked (unambiguous). */
 const OPENAI_PASSTHROUGH_PATHS = new Set([
-  "/v1/responses",
   "/v1/completions",
   "/v1/embeddings",
   "/v1/moderations",
@@ -39,6 +41,7 @@ export function createGateway(config: GatewayConfig): Server {
 
   const anthropicAdapter = new AnthropicAdapter(config.upstreamBaseUrl);
   const openaiAdapter = new OpenAIAdapter(config.openaiUpstreamBaseUrl);
+  const responsesAdapter = new ResponsesAdapter(config.openaiUpstreamBaseUrl);
 
   // Optional SQL-masking worker (off unless config.maskSql). Spawned once and
   // reused; reports readiness asynchronously and degrades gracefully.
@@ -89,6 +92,7 @@ export function createGateway(config: GatewayConfig): Server {
     const isMessages = path === MESSAGES_PATH;
     const isCountTokens = path === COUNT_TOKENS_PATH;
     const isChat = path === CHAT_PATH;
+    const isResponses = path === RESPONSES_PATH;
     const isOpenAiOther = OPENAI_PASSTHROUGH_PATHS.has(path);
 
     let adapter = anthropicAdapter as ProxyContext["adapter"];
@@ -96,6 +100,10 @@ export function createGateway(config: GatewayConfig): Server {
     let inspect = isMessages || isCountTokens;
     if (isChat) {
       adapter = openaiAdapter;
+      upstreamBaseUrl = config.openaiUpstreamBaseUrl;
+      inspect = true;
+    } else if (isResponses) {
+      adapter = responsesAdapter;
       upstreamBaseUrl = config.openaiUpstreamBaseUrl;
       inspect = true;
     } else if (isOpenAiOther) {

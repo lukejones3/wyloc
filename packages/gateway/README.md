@@ -13,7 +13,8 @@ format. Routing is by endpoint:
 | Client | Point it with | Endpoint | Forwarded to |
 | --- | --- | --- | --- |
 | **Claude Code** | `ANTHROPIC_BASE_URL` | `/v1/messages` | `api.anthropic.com` |
-| **Codex CLI** (& OpenAI-compatible) | `OPENAI_BASE_URL` | `/v1/chat/completions` | `api.openai.com` |
+| **Codex CLI** | `~/.codex/config.toml` `openai_base_url` | `/v1/responses` | `api.openai.com` |
+| **OpenAI Chat clients** | `OPENAI_BASE_URL` | `/v1/chat/completions` | `api.openai.com` |
 
 Auth is **relayed, never replaced** — `x-api-key` (Anthropic) and
 `Authorization: Bearer` (OpenAI) each pass straight through to the matching
@@ -92,6 +93,17 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   payload changes. A per-session content-hash cache makes re-sent history O(1).
   Shares the one store/salt, so a secret seen in a file and in typed text maps
   to the same mock and rehydrates together.
+- **Phase 8 — OpenAI Responses API masking** ✅. `/v1/responses` (the wire
+  format **Codex** uses — `wire_api: "responses"`) is now masked, not
+  passed through. A `ResponsesAdapter` (provider-adapter seam) walks
+  `instructions`, `input` (string or message items' `input_text`/`output_text`
+  parts), and `function_call_output` content (the file-read equivalent → same
+  content-router as Claude Code's `tool_result`); `function_call` args/`call_id`,
+  `reasoning` items, and all envelope fields stay byte-intact. Rehydration
+  reverses the `response.output_text.delta` stream **and** the terminal
+  full-text payloads (`response.output_text.done`, `response.completed`) that
+  Chat Completions doesn't re-emit. Reuses the entire masking engine + session
+  store/salt; behind the same toggles + graceful degradation.
 
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).
@@ -226,6 +238,13 @@ npm test --workspace @wyloc/gateway   # runs all six below
   secret, a comment) is masked/stripped/swapped before forwarding — external
   imports (React) survive — and the masked class echoed back by the fake
   upstream rehydrates to its real name in the stream.
+- `test-responses-mask.mjs` — Phase 8: a `/v1/responses` request with secret/SQL
+  in `input`, a code file in `function_call_output`, and `function_call` /
+  `reasoning` items → content masked, envelope byte-intact, and the streamed
+  response rehydrates end-to-end.
+- `test-responses-rehydrate.mjs` — Phase 8 unit: split-mock deltas reassemble,
+  the terminal `response.completed` / `output_text.done` full text rehydrates
+  (no leak), function-call args pass through.
 - `test-file-read-mask.mjs` — Phase 7 (file reads, default on): tool-result
   content carrying SQL, TS code, and a plain `.env` secret is masked (detector
   always; SQL/code per toggle) with the `tool_result` / `role:"tool"` envelope
