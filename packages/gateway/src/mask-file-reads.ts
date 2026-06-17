@@ -34,6 +34,7 @@
 import { createHash } from "node:crypto";
 import { scan, buildSwap } from "@wyloc/detector";
 import { looksLikeEnv, maskEnvValues } from "./env-mask.js";
+import { MOCK_MARKER } from "./swap-request.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -136,7 +137,11 @@ export class FileReadMaskHandle {
     // 2. DETECTOR — ALWAYS, regardless of sniff result. Catches secrets/PII in
     //    plain config/.env/log files that are neither SQL nor code.
     try {
-      const { findings } = scan(out, this.config.detector);
+      const { findings: raw } = scan(out, this.config.detector);
+      // Skip any finding that matched an existing WYLOC_MOCK_ placeholder a
+      // structural pass (env/SQL/code) just wrote — re-masking it would chain
+      // mock-of-a-mock, which one rehydration pass can't reverse.
+      const findings = raw.filter((f) => !f.value.includes(MOCK_MARKER));
       if (findings.length > 0) {
         const swap = buildSwap(out, findings, store.saltValue);
         out = swap.swappedText;

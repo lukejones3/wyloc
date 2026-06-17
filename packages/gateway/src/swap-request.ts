@@ -15,6 +15,10 @@
 
 import { scan, buildSwap, type SecretType } from "@wyloc/detector";
 import type { ProviderAdapter } from "./adapters/types.js";
+
+/** The reserved placeholder marker. Findings matching it are already-masked
+ *  values (from a prior pass or re-sent turn) and must never be re-masked. */
+export const MOCK_MARKER = "WYLOC_MOCK_";
 import type { GatewayConfig } from "./config.js";
 import type { SessionStore } from "./session.js";
 import type { MaskCache } from "./mask-cache.js";
@@ -72,9 +76,15 @@ interface SwapResult {
 function computeSwap(text: string, config: GatewayConfig, store: SessionStore): SwapResult {
   if (text.length === 0) return { out: text, detected: 0, types: [], mocks: [], leaked: false };
   const result = scan(text, config.detector);
-  if (result.findings.length === 0) return { out: text, detected: 0, types: [], mocks: [], leaked: false };
+  // Never re-mask an existing WYLOC_MOCK_ placeholder. A prior pass (env/SQL/code,
+  // or a re-sent earlier turn) may have already swapped a value to a mock; the
+  // detector can then re-match that mock (e.g. as an .env assignment value),
+  // producing a mock-of-a-mock chain that one rehydration pass can't reverse.
+  // A real secret never contains our marker, so this filter is safe.
+  const findings = result.findings.filter((f) => !f.value.includes(MOCK_MARKER));
+  if (findings.length === 0) return { out: text, detected: 0, types: [], mocks: [], leaked: false };
 
-  const { swappedText, mappings } = buildSwap(text, result.findings, store.saltValue);
+  const { swappedText, mappings } = buildSwap(text, findings, store.saltValue);
   store.add(mappings);
 
   let leaked = false;
@@ -85,7 +95,7 @@ function computeSwap(text: string, config: GatewayConfig, store: SessionStore): 
     // survive the swap. (Deterministic for a given text, so safe to cache.)
     if (m.real.length > 0 && swappedText.includes(m.real)) leaked = true;
   }
-  return { out: swappedText, detected: result.findings.length, types: result.findings.map((f) => f.type), mocks, leaked };
+  return { out: swappedText, detected: findings.length, types: findings.map((f) => f.type), mocks, leaked };
 }
 
 /**
