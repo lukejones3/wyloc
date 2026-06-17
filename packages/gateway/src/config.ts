@@ -33,6 +33,8 @@ export interface GatewayConfig {
   upstreamBaseUrl: string;
   /** Upstream OpenAI API origin (for /v1/chat/completions and other OpenAI paths). */
   openaiUpstreamBaseUrl: string;
+  /** Upstream Google Gemini API origin (for /v1beta/models/*:generateContent). */
+  geminiUpstreamBaseUrl: string;
   /**
    * Detector tuning passed verbatim to `scan()`. Controls which patterns
    * are active (via `suppressedRuleIds`), entropy thresholds, allowlist,
@@ -145,12 +147,17 @@ export function loadConfig(): GatewayConfig {
     "WYLOC_OPENAI_UPSTREAM_BASE_URL",
     "https://api.openai.com",
   ).replace(/\/+$/, "");
+  const geminiUpstreamBaseUrl = envStr(
+    "WYLOC_GEMINI_UPSTREAM_BASE_URL",
+    "https://generativelanguage.googleapis.com",
+  ).replace(/\/+$/, "");
 
   return {
     port: envInt("WYLOC_GATEWAY_PORT", 8787),
     host: envStr("WYLOC_GATEWAY_HOST", "127.0.0.1"),
     upstreamBaseUrl,
     openaiUpstreamBaseUrl,
+    geminiUpstreamBaseUrl,
     detector: {},
     onDetect,
     injectSystemPrompt: envBool("WYLOC_INJECT_SYSTEM_PROMPT", true),

@@ -6,7 +6,7 @@ upstream API. It detects secrets in outbound prompts and swaps them for
 the real values inline in the streamed response — the same protection as the
 Wyloc browser extension, reusing the same [`@wyloc/detector`](../detector) engine.
 
-**Two providers, one core.** The masking/detector/SQL/rehydration engine is
+**Four wire formats, one core.** The masking/detector/SQL/rehydration engine is
 wire-format-agnostic; a thin per-provider adapter (`src/adapters/`) handles each
 format. Routing is by endpoint:
 
@@ -15,17 +15,18 @@ format. Routing is by endpoint:
 | **Claude Code** | `ANTHROPIC_BASE_URL` | `/v1/messages` | `api.anthropic.com` |
 | **Codex CLI** | `~/.codex/config.toml` `openai_base_url` | `/v1/responses` | `api.openai.com` |
 | **OpenAI Chat clients** | `OPENAI_BASE_URL` | `/v1/chat/completions` | `api.openai.com` |
+| **Gemini CLI** | `GEMINI_BASE_URL` | `/v1beta/models/*:generateContent` | `generativelanguage.googleapis.com` |
 
-Those three endpoints cover the broader OpenAI-compatible ecosystem — **Aider,
-Goose, OpenCode, Continue, Cline, Roo Code, Kilo Code** all speak Chat
+The OpenAI Chat endpoint covers the broader OpenAI-compatible ecosystem —
+**Aider, Goose, OpenCode, Continue, Cline, Roo Code, Kilo Code** all speak Chat
 Completions and are masked as-is once pointed at the gateway. See
 [**SUPPORTED_TOOLS.md**](./SUPPORTED_TOOLS.md) for the per-tool routing,
-wire-format, file-read, and `wyloc setup` matrix (and which tools — e.g. Gemini
-CLI — need a dedicated adapter).
+wire-format, file-read, and `wyloc setup` matrix (the single source of truth for
+what Wyloc covers).
 
-Auth is **relayed, never replaced** — `x-api-key` (Anthropic) and
-`Authorization: Bearer` (OpenAI) each pass straight through to the matching
-upstream, and `Host` is set per-provider.
+Auth is **relayed, never replaced** — `x-api-key` (Anthropic),
+`Authorization: Bearer` (OpenAI), and `x-goog-api-key` / `?key=` (Gemini) each
+pass straight through to the matching upstream, and `Host` is set per-provider.
 
 ```
  claude / codex ─►  *_BASE_URL=http://127.0.0.1:8787

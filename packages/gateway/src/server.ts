@@ -20,6 +20,7 @@ import { MaskCache } from "./mask-cache.js";
 import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
 import { ResponsesAdapter } from "./adapters/responses.js";
+import { GeminiAdapter } from "./adapters/gemini.js";
 
 /** Anthropic Messages endpoints (masked). */
 const MESSAGES_PATH = "/v1/messages";
@@ -28,6 +29,14 @@ const COUNT_TOKENS_PATH = "/v1/messages/count_tokens";
 const CHAT_PATH = "/v1/chat/completions";
 /** OpenAI Responses endpoint (masked — the wire format Codex uses). */
 const RESPONSES_PATH = "/v1/responses";
+/**
+ * Google Gemini generate endpoints (masked — the wire format the Gemini CLI
+ * uses). Path is `/v1beta/models/{model}:generateContent` (or
+ * `:streamGenerateContent`); `/v1beta/` is Gemini-specific so it never collides
+ * with the Anthropic/OpenAI routes. Other `/v1beta/*` actions (`:countTokens`,
+ * `:embedContent`) forward to the Gemini upstream unmasked.
+ */
+const GEMINI_GENERATE_RE = /\/models\/[^/]+:(?:stream)?[Gg]enerateContent\b/;
 /** Other OpenAI-only paths — forwarded to OpenAI, not masked (unambiguous). */
 const OPENAI_PASSTHROUGH_PATHS = new Set([
   "/v1/completions",
@@ -48,6 +57,7 @@ export function createGateway(config: GatewayConfig): Server {
   const anthropicAdapter = new AnthropicAdapter(config.upstreamBaseUrl);
   const openaiAdapter = new OpenAIAdapter(config.openaiUpstreamBaseUrl);
   const responsesAdapter = new ResponsesAdapter(config.openaiUpstreamBaseUrl);
+  const geminiAdapter = new GeminiAdapter(config.geminiUpstreamBaseUrl);
 
   // Optional SQL-masking worker (off unless config.maskSql). Spawned once and
   // reused; reports readiness asynchronously and degrades gracefully.
@@ -107,6 +117,8 @@ export function createGateway(config: GatewayConfig): Server {
     const isChat = path === CHAT_PATH;
     const isResponses = path === RESPONSES_PATH;
     const isOpenAiOther = OPENAI_PASSTHROUGH_PATHS.has(path);
+    const isGemini = path.startsWith("/v1beta/");
+    const isGeminiGenerate = isGemini && GEMINI_GENERATE_RE.test(path);
 
     let adapter = anthropicAdapter as ProxyContext["adapter"];
     let upstreamBaseUrl = config.upstreamBaseUrl;
@@ -123,6 +135,10 @@ export function createGateway(config: GatewayConfig): Server {
       adapter = openaiAdapter;
       upstreamBaseUrl = config.openaiUpstreamBaseUrl;
       inspect = false;
+    } else if (isGemini) {
+      adapter = geminiAdapter;
+      upstreamBaseUrl = config.geminiUpstreamBaseUrl;
+      inspect = isGeminiGenerate; // mask only generate(Content); other /v1beta/* forwarded
     }
 
     const ctx: ProxyContext = {
@@ -140,7 +156,7 @@ export function createGateway(config: GatewayConfig): Server {
       detectorCache,
     };
 
-    if (isMessages || isCountTokens || isChat || isOpenAiOther || path.startsWith("/v1/")) {
+    if (isMessages || isCountTokens || isChat || isOpenAiOther || isGemini || path.startsWith("/v1/")) {
       void forward(req, res, ctx).catch((err) => {
         log.error(`unhandled error for ${path}`, err);
         if (!res.headersSent) {

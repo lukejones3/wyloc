@@ -14,7 +14,7 @@ import type { MockMapping } from "../session.js";
 export type TextVisitor = (text: string) => string | Promise<string>;
 
 export interface ProviderAdapter {
-  readonly id: "anthropic" | "openai";
+  readonly id: "anthropic" | "openai" | "gemini";
   /** Upstream origin this adapter forwards to (overridable via config). */
   readonly defaultUpstreamBaseUrl: string;
 
