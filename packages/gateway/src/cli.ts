@@ -32,7 +32,7 @@ function configHome(): string {
 }
 const STATE_FILE = () => join(configHome(), "setup-state.json");
 
-interface ToolChange { tool: string; file: string; format: "json" | "toml"; backup?: string; addedKeys?: string[]; }
+interface ToolChange { tool: string; file: string; format: "json" | "toml" | "yaml"; backup?: string; addedKeys?: string[]; }
 
 // ── TOML top-level scalar helpers (no dependency; Codex config is TOML) ───────
 // We only touch ONE top-level key (openai_base_url). Top-level keys must appear
@@ -61,6 +61,25 @@ function removeTomlTopLevelKey(content: string, key: string): string {
   const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
   const keyRe = new RegExp(`^\\s*${key}\\s*=`);
   return lines.filter((l, i) => !((firstTable === -1 || i < firstTable) && keyRe.test(l))).join("\n");
+}
+
+// ── YAML top-level scalar helpers (no dependency; aider's .aider.conf.yml) ─────
+// We only touch ONE top-level key (openai-api-base). Top-level keys have no
+// indentation, so matching `^key:` never disturbs nested mapping keys. The value
+// is double-quoted (a valid YAML double-quoted scalar) so URLs with `:` are safe.
+function setYamlTopLevelString(content: string, key: string, value: string): string {
+  const lines = content.split(/\r?\n/);
+  const keyRe = new RegExp(`^${key}\\s*:`);
+  const newLine = `${key}: ${JSON.stringify(value)}`; // JSON string == valid YAML double-quoted scalar
+  for (let i = 0; i < lines.length; i++) {
+    if (keyRe.test(lines[i]!)) { lines[i] = newLine; return lines.join("\n"); } // replace existing top-level key
+  }
+  const body = content.replace(/\s*$/, "");
+  return (body ? body + "\n" : "") + newLine + "\n";
+}
+function removeYamlTopLevelKey(content: string, key: string): string {
+  const keyRe = new RegExp(`^${key}\\s*:`);
+  return content.split(/\r?\n/).filter((l) => !keyRe.test(l)).join("\n");
 }
 interface SetupState { url: string; changes: ToolChange[]; }
 
@@ -152,7 +171,47 @@ const codex: AiTool = {
     "Full Codex protection requires gateway Responses-API masking (not yet implemented).",
 };
 
-const TOOLS = [claudeCode, codex];
+/**
+ * Aider: reads `.aider.conf.yml` (home dir, repo root, or cwd); the top-level
+ * `openai-api-base` key sets the OpenAI-compatible base URL (doc-confirmed
+ * against aider's config reference). Aider talks the Chat Completions wire
+ * format, which the gateway MASKS — so unlike Codex this is real protection.
+ * We write the home-directory copy (the machine-wide default).
+ *
+ * The base URL gets a `/v1` suffix: aider/OpenAI clients append
+ * `/chat/completions`, and the gateway routes `/v1/chat/completions`.
+ */
+const aider: AiTool = {
+  name: "Aider",
+  detect() {
+    return existsSync(join(homedir(), ".aider.conf.yml")) || onPath("aider");
+  },
+  plan(url) {
+    const f = join(homedir(), ".aider.conf.yml");
+    return `Aider → set openai-api-base: "${url}/v1" in ${f}`;
+  },
+  apply(url) {
+    const f = join(homedir(), ".aider.conf.yml");
+    mkdirSync(dirname(f), { recursive: true });
+    const existed = existsSync(f);
+    const backup = existed ? backupOf(f) : undefined;
+    const original = existed ? readFileSync(f, "utf8") : "";
+    writeFileSync(f, setYamlTopLevelString(original, "openai-api-base", `${url}/v1`));
+    return { tool: this.name, file: f, format: "yaml", ...(backup ? { backup } : { addedKeys: ["openai-api-base"] }) };
+  },
+  // Aider's Chat Completions traffic IS masked. The remaining caveat is routing:
+  // the gateway forwards Chat Completions to ONE configured OpenAI upstream
+  // (api.openai.com by default). Point it elsewhere with WYLOC_OPENAI_UPSTREAM_BASE_URL
+  // if you use a non-OpenAI OpenAI-compatible backend. Use an OpenAI-style model
+  // so aider actually routes through openai-api-base.
+  note:
+    "Aider speaks the OpenAI Chat Completions API, which WYLOC masks (real protection, unlike Codex). " +
+    "The gateway forwards Chat Completions to its single OpenAI upstream (api.openai.com by default; set " +
+    "WYLOC_OPENAI_UPSTREAM_BASE_URL for another OpenAI-compatible backend). Use an OpenAI-style model so " +
+    "aider routes through openai-api-base.",
+};
+
+const TOOLS = [claudeCode, codex, aider];
 
 function onPath(bin: string): boolean {
   try {
@@ -172,7 +231,7 @@ async function cmdSetup(args: string[]): Promise<void> {
   const assumeYes = args.includes("--yes") || args.includes("-y");
   const detected = TOOLS.filter((t) => t.detect());
   if (detected.length === 0) {
-    console.error("No supported AI tools detected (Claude Code, Codex). Nothing to do.");
+    console.error("No supported AI tools detected (Claude Code, Codex, Aider). Nothing to do.");
     return;
   }
   console.error(`Wyloc gateway: ${GATEWAY_URL}\n\nThis will make the following changes:`);
@@ -206,9 +265,11 @@ function cmdUnsetup(): void {
         copyFileSync(c.backup, c.file); rmSync(c.backup, { force: true });
       } else if (c.addedKeys && existsSync(c.file)) {
         // We created the file (no backup) — remove only our keys, format-aware.
-        if (c.format === "toml") {
+        if (c.format === "toml" || c.format === "yaml") {
           let content = readFileSync(c.file, "utf8");
-          for (const k of c.addedKeys) content = removeTomlTopLevelKey(content, k);
+          for (const k of c.addedKeys) {
+            content = c.format === "toml" ? removeTomlTopLevelKey(content, k) : removeYamlTopLevelKey(content, k);
+          }
           if (content.trim() === "") rmSync(c.file, { force: true });
           else writeFileSync(c.file, content);
         } else {
@@ -349,7 +410,7 @@ function help(): void {
   console.error(`wyloc — prompt-time DLP gateway
 
   wyloc [start]            run the gateway (foreground)
-  wyloc setup [--yes]      point installed AI tools (Claude Code, Codex) at the gateway
+  wyloc setup [--yes]      point installed AI tools (Claude Code, Codex, Aider) at the gateway
   wyloc unsetup            revert what setup changed
   wyloc service <cmd>      install|uninstall|start|stop|status|enable|disable (launchd/systemd)
   wyloc status             gateway health + setup status

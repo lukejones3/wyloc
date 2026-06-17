@@ -20,6 +20,8 @@ writeFileSync(join(HOME, ".claude", "settings.json"), JSON.stringify({ theme: "d
 mkdirSync(join(HOME, ".codex"), { recursive: true });
 // Pre-existing Codex config.toml — setup must MERGE openai_base_url, not clobber.
 writeFileSync(join(HOME, ".codex", "config.toml"), 'model = "gpt-5-codex"\n\n[tools]\nweb_search = true\n');
+// Pre-existing aider .aider.conf.yml — setup must ADD openai-api-base, preserving the rest.
+writeFileSync(join(HOME, ".aider.conf.yml"), 'dark-mode: true\nauto-commits: false\n');
 
 const ENTRY = join(fileURLToPath(new URL(".", import.meta.url)), "src", "index.ts");
 function wyloc(...args) {
@@ -43,6 +45,11 @@ ok("codex: existing [tools] table preserved", /\[tools\]/.test(codexToml) && /we
 ok("codex: top-level key precedes the [tools] table (valid TOML)",
   codexToml.indexOf("openai_base_url") < codexToml.indexOf("[tools]"));
 
+// Aider: setup writes openai-api-base (with /v1 suffix) to .aider.conf.yml, preserving the rest
+const aiderYml = readFileSync(join(HOME, ".aider.conf.yml"), "utf8");
+ok("aider: openai-api-base set with /v1 suffix", /openai-api-base:\s*"http:\/\/[^"]+\/v1"/.test(aiderYml));
+ok("aider: existing top-level keys preserved", /dark-mode:\s*true/.test(aiderYml) && /auto-commits:\s*false/.test(aiderYml));
+
 // idempotent: running again doesn't double up
 wyloc("setup", "--yes");
 const st = JSON.parse(readFileSync(join(STATE, "setup-state.json"), "utf8"));
@@ -59,6 +66,11 @@ ok("unsetup cleared state", !existsSync(join(STATE, "setup-state.json")));
 const codexReverted = readFileSync(join(HOME, ".codex", "config.toml"), "utf8");
 ok("codex: unsetup removed openai_base_url", !/openai_base_url/.test(codexReverted));
 ok("codex: unsetup preserved original config", /model\s*=\s*"gpt-5-codex"/.test(codexReverted) && /\[tools\]/.test(codexReverted));
+
+// Aider revert: openai-api-base removed, original keys preserved
+const aiderReverted = readFileSync(join(HOME, ".aider.conf.yml"), "utf8");
+ok("aider: unsetup removed openai-api-base", !/openai-api-base/.test(aiderReverted));
+ok("aider: unsetup preserved original config", /dark-mode:\s*true/.test(aiderReverted) && /auto-commits:\s*false/.test(aiderReverted));
 
 // service definitions are well-formed and encode start-on-login + restart-on-crash
 const plist = renderLaunchdPlist();
