@@ -28,7 +28,7 @@ import type { FileReadMaskHandle } from "./mask-file-reads.js";
 import type { EnvMaskHandle } from "./env-mask.js";
 import type { MaskCache } from "./mask-cache.js";
 import type { ProviderAdapter } from "./adapters/types.js";
-import { runDetectorSwap } from "./swap-request.js";
+import { applyDetectorSwap } from "./swap-request.js";
 import {
   buildClientHeaders,
   buildUpstreamHeaders,
@@ -96,118 +96,69 @@ export async function forward(
   // 1. Buffer the request body.
   const reqBody = await readBody(req);
 
-  // ── REQUEST SEAM (Phase 2): real → mock swap on user text only ──────
-  // For Messages-format paths we parse the body, swap secrets out of the
-  // text content (never tool blocks / structure), and forward the
-  // rewritten bytes. For all other paths we forward untouched.
+  // ── REQUEST SEAM: real → mock masking on user text only ──────────────
+  // PARSE-ONCE pipeline: parse the body ONCE, run every pass on the shared
+  // parsed object (each masks the prior's output, preserving the chaining
+  // semantics — detector runs on SQL/code/env-masked text), inject the directive
+  // once, and serialize ONCE. Tool-call structure is never touched. Non-JSON or
+  // non-object bodies forward untouched.
   let outboundBody = reqBody;
-  if (inspect) {
+  if (inspect && reqBody.length > 0) {
     const maskStart = Date.now();
-    // SQL-masking pass (optional): mask proprietary identifiers + scrub
-    // sensitive literals in any SQL, BEFORE the detector swap runs. Mappings
-    // are folded into the same store, so the response rehydrates them too.
-    let bodyForSwap = reqBody;
-    if (sqlMask) {
-      const sqlOutcome = await sqlMask.maskBody(adapter, reqBody, store);
-      bodyForSwap = sqlOutcome.body;
-      if (sqlOutcome.blocks > 0) {
-        log.debug(
-          `sql-mask: ${sqlOutcome.blocks} SQL block(s), ` +
-            `${sqlOutcome.masked} identifier/value(s) masked in ${path}`,
-        );
-      }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(reqBody.toString("utf8"));
+    } catch {
+      parsed = undefined;
     }
-
-    // Code-masking pass (optional): mask proprietary TS/JS identifiers + internal
-    // infra + strip comments in fenced code blocks, also BEFORE the detector
-    // swap. Mappings fold into the same store, so the response rehydrates them.
-    if (codeMask) {
-      const codeOutcome = await codeMask.maskBody(adapter, bodyForSwap, store);
-      bodyForSwap = codeOutcome.body;
-      if (codeOutcome.blocks > 0) {
-        log.debug(
-          `code-mask: ${codeOutcome.blocks} TS/JS block(s), ` +
-            `${codeOutcome.masked} identifier/value(s) masked in ${path}`,
-        );
+    if (parsed !== null && typeof parsed === "object") {
+      let mutated = false; // did ANY pass change the object? (else forward original bytes)
+      if (sqlMask) {
+        const r = await sqlMask.applyToParsed(adapter, parsed, store);
+        if (r.blocks > 0) { mutated = true; log.debug(`sql-mask: ${r.blocks} SQL block(s), ${r.masked} masked in ${path}`); }
       }
-    }
-
-    // Env-masking pass (optional): mask the VALUES of any env content the user
-    // typed/pasted (fenced env block or a whole-message .env), keeping keys +
-    // structure visible. Also BEFORE the detector swap. (Agent-read .env files
-    // are handled by the file-read content-router below.)
-    if (envMask) {
-      const envOutcome = await envMask.maskBody(adapter, bodyForSwap, store);
-      bodyForSwap = envOutcome.body;
-      if (envOutcome.blocks > 0) {
-        log.debug(`env-mask: ${envOutcome.blocks} env block(s), ${envOutcome.masked} value(s) masked in ${path}`);
+      if (codeMask) {
+        const r = await codeMask.applyToParsed(adapter, parsed, store);
+        if (r.blocks > 0) { mutated = true; log.debug(`code-mask: ${r.blocks} TS/JS block(s), ${r.masked} masked in ${path}`); }
       }
-    }
-
-    // File-read masking pass (optional): mask the text of tool results (files
-    // the agent read on its own) — detector always, SQL/code/env per toggles
-    // — also BEFORE the message-text detector swap. Shares the same store/salt.
-    let fileReadSecretMock = false;
-    if (fileReadMask) {
-      const fr = await fileReadMask.maskBody(adapter, bodyForSwap, store);
-      bodyForSwap = fr.body;
-      fileReadSecretMock = fr.hasSecretMock;
-      if (fr.files > 0) {
-        log.debug(
-          `file-read-mask: ${fr.files} tool-result(s), ` +
-            `${fr.masked} identifier/value(s) masked in ${path}`,
-        );
+      if (envMask) {
+        const r = await envMask.applyToParsed(adapter, parsed, store);
+        if (r.blocks > 0) { mutated = true; log.debug(`env-mask: ${r.blocks} env block(s), ${r.masked} value(s) masked in ${path}`); }
       }
-    }
-
-    const outcome = await runDetectorSwap(adapter, bodyForSwap, config, store, detectorCache);
-
-    if (outcome.detected > 0) {
-      // Metadata-only logging (gated by WYLOC_VERBOSE / DEBUG). NEVER logs
-      // a secret value or a mock↔real mapping — only coarse types, counts,
-      // and the leak boolean computed locally.
-      log.debug(
-        `detection: ${outcome.detected} secret(s) in ${path} ` +
-          `[types: ${dedupe(outcome.types).join(", ")}]`,
-      );
-
-      if (config.onDetect === "block") {
-        log.debug(`policy=block → rejecting request to ${path}, not forwarding`);
-        sendGatewayError(
-          res,
-          403,
-          `Blocked: ${outcome.detected} secret(s) detected in prompt ` +
-            `(policy onDetect=block).`,
-        );
-        return;
+      let fileReadSecretMock = false;
+      if (fileReadMask) {
+        const r = await fileReadMask.applyToParsed(adapter, parsed, store);
+        fileReadSecretMock = r.hasSecretMock;
+        if (r.files > 0) { mutated = true; log.debug(`file-read-mask: ${r.files} tool-result(s), ${r.masked} masked in ${path}`); }
       }
 
-      log.debug(
-        `swap: ${outcome.swapCount} placeholder(s) written; ` +
-          `WYLOC_MOCK_ count in upstream body=${outcome.mockCount}; ` +
-          `real secret survived swap in rewritten text: ${outcome.leaked ? "YES — LEAK!" : "no"}; ` +
-          `system directive injected: ${outcome.injected ? "yes" : "no"}`,
-      );
-      if (outcome.leaked) {
-        log.error(
-          `swap leak guard tripped for ${path}: a real secret survived the swap in text we rewrote`,
-        );
+      // Detector swap runs LAST, on the SQL/code/env/file-read-masked object.
+      const det = await applyDetectorSwap(adapter, parsed, config, store, detectorCache);
+      if (det.detected > 0) {
+        mutated = true;
+        log.debug(`detection: ${det.detected} secret(s) in ${path} [types: ${dedupe(det.types).join(", ")}]`);
+        if (config.onDetect === "block") {
+          log.debug(`policy=block → rejecting request to ${path}, not forwarding`);
+          sendGatewayError(res, 403, `Blocked: ${det.detected} secret(s) detected in prompt (policy onDetect=block).`);
+          return;
+        }
+        if (det.leaked) log.error(`swap leak guard tripped for ${path}: a real secret survived the swap`);
       }
-    }
 
-    outboundBody = outcome.body;
-
-    // If a secret mock came ONLY from a file read (so the message-text swap
-    // didn't already inject), still inject the verbatim-echo directive this turn
-    // so the mock round-trips reliably through the response.
-    if (fileReadSecretMock && !outcome.injected && config.injectSystemPrompt) {
-      try {
-        const parsed = JSON.parse(outboundBody.toString("utf8"));
+      // Inject the verbatim-echo directive ONCE if any mock was produced this
+      // turn (message-text secret OR a file-read secret), so it round-trips.
+      let injected = false;
+      if ((det.detected > 0 || fileReadSecretMock) && config.injectSystemPrompt) {
         adapter.injectDirective(parsed);
-        outboundBody = Buffer.from(JSON.stringify(parsed), "utf8");
-        log.debug(`directive injected for ${path} (file-read secret mock present)`);
-      } catch {
-        /* non-JSON body shouldn't reach here; leave as-is if it does */
+        injected = true;
+        mutated = true;
+      }
+
+      // SERIALIZE ONCE — but only if a pass changed the object; otherwise
+      // forward the ORIGINAL bytes (byte-identical to a no-op request).
+      outboundBody = mutated ? Buffer.from(JSON.stringify(parsed), "utf8") : reqBody;
+      if (det.detected > 0) {
+        log.debug(`swap: ${det.swapCount} placeholder(s); directive injected: ${injected ? "yes" : "no"}`);
       }
     }
     maskMs = Date.now() - maskStart;

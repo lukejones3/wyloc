@@ -203,25 +203,34 @@ export class EnvMaskHandle {
     return { text, blocks: 0, masked: 0 };
   }
 
-  /** Walk request text and mask any typed/pasted env content. */
+  /** Mask typed/pasted env content in an ALREADY-PARSED request object, in place. */
+  applyToParsed(
+    adapter: ProviderAdapter,
+    parsed: unknown,
+    store: SessionStore,
+  ): Promise<{ blocks: number; masked: number }> {
+    if (!this.config.maskEnv) return Promise.resolve({ blocks: 0, masked: 0 });
+    let blocks = 0, masked = 0;
+    return adapter.forEachText(parsed, (text) => {
+      const r = this.maskText(text, store);
+      blocks += r.blocks; masked += r.masked;
+      return r.text;
+    }).then(() => ({ blocks, masked }));
+  }
+
+  /** Buffer→Buffer wrapper (parse + serialize). Proxy uses applyToParsed. */
   async maskBody(
     adapter: ProviderAdapter,
     raw: Buffer,
     store: SessionStore,
   ): Promise<{ body: Buffer; processed: boolean; blocks: number; masked: number }> {
     const passthrough = { body: raw, processed: false, blocks: 0, masked: 0 };
-    if (!this.config.maskEnv || raw.length === 0) return passthrough;
-
+    if (raw.length === 0) return passthrough;
     let parsed: unknown;
     try { parsed = JSON.parse(raw.toString("utf8")); } catch { return passthrough; }
     if (parsed === null || typeof parsed !== "object") return passthrough;
 
-    let blocks = 0, masked = 0;
-    await adapter.forEachText(parsed, (text) => {
-      const r = this.maskText(text, store);
-      blocks += r.blocks; masked += r.masked;
-      return r.text;
-    });
+    const { blocks, masked } = await this.applyToParsed(adapter, parsed, store);
     if (blocks === 0) return { ...passthrough, processed: true };
     return { body: Buffer.from(JSON.stringify(parsed), "utf8"), processed: true, blocks, masked };
   }

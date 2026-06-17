@@ -156,24 +156,14 @@ export class FileReadMaskHandle {
    * Mask the text payload of every tool result in `raw`, folding mappings into
    * `store`. The adapter exposes only tool-result TEXT, so structure is safe.
    */
-  async maskBody(
+  /** Mask tool-result content in an ALREADY-PARSED request object, in place. */
+  async applyToParsed(
     adapter: ProviderAdapter,
-    raw: Buffer,
+    parsed: unknown,
     store: SessionStore,
-  ): Promise<FileReadMaskOutcome> {
-    if (!this.config.maskFileReads) return passthrough(raw);
-    if (raw.length === 0) return passthrough(raw);
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.toString("utf8"));
-    } catch {
-      return passthrough(raw);
-    }
-    if (parsed === null || typeof parsed !== "object") return passthrough(raw);
-
+  ): Promise<{ files: number; masked: number; hasSecretMock: boolean }> {
+    if (!this.config.maskFileReads) return { files: 0, masked: 0, hasSecretMock: false };
     const sqlReady = this.config.maskSql && this.sqlMask ? await this.sqlMask.ready() : false;
-
     let files = 0;
     let masked = 0;
     let hasSecretMock = false;
@@ -184,14 +174,26 @@ export class FileReadMaskHandle {
       if (rec.hasSecretMock) hasSecretMock = true;
       return rec.out;
     });
+    return { files, masked, hasSecretMock };
+  }
 
+  /** Buffer→Buffer wrapper (parse + serialize). Proxy uses applyToParsed. */
+  async maskBody(
+    adapter: ProviderAdapter,
+    raw: Buffer,
+    store: SessionStore,
+  ): Promise<FileReadMaskOutcome> {
+    if (raw.length === 0) return passthrough(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return passthrough(raw);
+    }
+    if (parsed === null || typeof parsed !== "object") return passthrough(raw);
+
+    const { files, masked, hasSecretMock } = await this.applyToParsed(adapter, parsed, store);
     if (files === 0 && !hasSecretMock) return { ...passthrough(raw), processed: true };
-    return {
-      body: Buffer.from(JSON.stringify(parsed), "utf8"),
-      processed: true,
-      files,
-      masked,
-      hasSecretMock,
-    };
+    return { body: Buffer.from(JSON.stringify(parsed), "utf8"), processed: true, files, masked, hasSecretMock };
   }
 }

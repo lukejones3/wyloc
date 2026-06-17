@@ -172,33 +172,23 @@ export class SqlMaskHandle {
   }
 
   /**
-   * Walk a request body via `adapter`, mask SQL in the same text surfaces the
-   * detector pass uses, and fold the mappings into `store`. Tool-call structure
-   * is never touched (the adapter's walk skips it).
+   * Mask SQL in an ALREADY-PARSED request object, in place (parse-once
+   * pipeline). Returns counts only; never touches tool-call structure.
+   * No-op when disabled or the sqlglot worker isn't ready.
    */
-  async maskBody(
+  async applyToParsed(
     adapter: ProviderAdapter,
-    raw: Buffer,
+    parsed: unknown,
     store: SessionStore,
-  ): Promise<SqlMaskBodyOutcome> {
-    if (!this.config.maskSql) return passthrough(raw);
+  ): Promise<{ blocks: number; masked: number }> {
+    if (!this.config.maskSql) return { blocks: 0, masked: 0 };
     if (!(await this.readyPromise)) {
       if (!this.loggedDisabled) {
         this.log.debug("maskSql enabled but sqlglot worker unavailable — SQL masking disabled (detector swap still active)");
         this.loggedDisabled = true;
       }
-      return passthrough(raw);
+      return { blocks: 0, masked: 0 };
     }
-    if (raw.length === 0) return passthrough(raw);
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.toString("utf8"));
-    } catch {
-      return passthrough(raw);
-    }
-    if (parsed === null || typeof parsed !== "object") return passthrough(raw);
-
     let blocks = 0;
     let masked = 0;
     await adapter.forEachText(parsed, async (text) => {
@@ -207,14 +197,30 @@ export class SqlMaskHandle {
       masked += r.masked;
       return r.text;
     });
+    return { blocks, masked };
+  }
 
+  /**
+   * Buffer→Buffer wrapper around applyToParsed (parse + serialize). Retained
+   * for standalone/test callers; the proxy uses applyToParsed (parse once).
+   */
+  async maskBody(
+    adapter: ProviderAdapter,
+    raw: Buffer,
+    store: SessionStore,
+  ): Promise<SqlMaskBodyOutcome> {
+    if (raw.length === 0) return passthrough(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return passthrough(raw);
+    }
+    if (parsed === null || typeof parsed !== "object") return passthrough(raw);
+
+    const { blocks, masked } = await this.applyToParsed(adapter, parsed, store);
     if (blocks === 0) return { ...passthrough(raw), processed: true };
-    return {
-      body: Buffer.from(JSON.stringify(parsed), "utf8"),
-      processed: true,
-      blocks,
-      masked,
-    };
+    return { body: Buffer.from(JSON.stringify(parsed), "utf8"), processed: true, blocks, masked };
   }
 
   close(): void {

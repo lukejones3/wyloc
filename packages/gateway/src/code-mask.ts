@@ -142,22 +142,13 @@ export class CodeMaskHandle {
    * detector pass uses, and fold the mappings into `store`. Tool-call structure
    * is never touched (the adapter's walk skips it).
    */
-  async maskBody(
+  /** Mask fenced code in an ALREADY-PARSED request object, in place. */
+  async applyToParsed(
     adapter: ProviderAdapter,
-    raw: Buffer,
+    parsed: unknown,
     store: SessionStore,
-  ): Promise<CodeMaskBodyOutcome> {
-    if (!this.config.maskCode || !this.masker) return passthrough(raw);
-    if (raw.length === 0) return passthrough(raw);
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.toString("utf8"));
-    } catch {
-      return passthrough(raw);
-    }
-    if (parsed === null || typeof parsed !== "object") return passthrough(raw);
-
+  ): Promise<{ blocks: number; masked: number }> {
+    if (!this.config.maskCode || !this.masker) return { blocks: 0, masked: 0 };
     let blocks = 0;
     let masked = 0;
     await adapter.forEachText(parsed, (text) => {
@@ -166,14 +157,27 @@ export class CodeMaskHandle {
       masked += r.masked;
       return r.text;
     });
+    return { blocks, masked };
+  }
 
+  /** Buffer→Buffer wrapper (parse + serialize). Proxy uses applyToParsed. */
+  async maskBody(
+    adapter: ProviderAdapter,
+    raw: Buffer,
+    store: SessionStore,
+  ): Promise<CodeMaskBodyOutcome> {
+    if (raw.length === 0) return passthrough(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return passthrough(raw);
+    }
+    if (parsed === null || typeof parsed !== "object") return passthrough(raw);
+
+    const { blocks, masked } = await this.applyToParsed(adapter, parsed, store);
     if (blocks === 0) return { ...passthrough(raw), processed: true };
-    return {
-      body: Buffer.from(JSON.stringify(parsed), "utf8"),
-      processed: true,
-      blocks,
-      masked,
-    };
+    return { body: Buffer.from(JSON.stringify(parsed), "utf8"), processed: true, blocks, masked };
   }
 
   close(): void {

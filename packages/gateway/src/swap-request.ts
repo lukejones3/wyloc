@@ -97,6 +97,32 @@ function computeSwap(text: string, config: GatewayConfig, store: SessionStore): 
  * understand. The detector config and session store come from the gateway
  * config seam; nothing here is hardcoded.
  */
+/** Detector swap on an ALREADY-PARSED request object, in place. Returns the
+ *  metrics; does NOT inject the directive or serialize (the proxy does both
+ *  once at the end of the parse-once pipeline). */
+export function applyDetectorSwap(
+  adapter: ProviderAdapter,
+  parsed: unknown,
+  config: GatewayConfig,
+  store: SessionStore,
+  cache: MaskCache,
+): Promise<{ detected: number; swapCount: number; types: SecretType[]; leaked: boolean }> {
+  const acc: Acc = { detected: 0, types: [], mocks: new Set(), leaked: false };
+  // Cache by content: re-sent history strings are a cheap hit (their mappings
+  // are already in the store), so only NEW text is scanned. The cached result
+  // is replayed into `acc` for the same per-request accounting.
+  return adapter.forEachText(parsed, (text) => {
+    const r = cache.memo(text, () => computeSwap(text, config, store));
+    acc.detected += r.detected;
+    for (const t of r.types) acc.types.push(t);
+    for (const mck of r.mocks) acc.mocks.add(mck);
+    if (r.leaked) acc.leaked = true;
+    return r.out;
+  }).then(() => ({ detected: acc.detected, swapCount: acc.mocks.size, types: acc.types, leaked: acc.leaked }));
+}
+
+/** Buffer→Buffer wrapper (parse, swap, inject, serialize). Retained for
+ *  standalone/test callers; the proxy uses applyDetectorSwap (parse once). */
 export async function runDetectorSwap(
   adapter: ProviderAdapter,
   raw: Buffer,
@@ -105,18 +131,11 @@ export async function runDetectorSwap(
   cache: MaskCache,
 ): Promise<SwapOutcome> {
   const passthrough = (): SwapOutcome => ({
-    body: raw,
-    processed: false,
-    detected: 0,
-    swapCount: 0,
-    injected: false,
-    types: [],
-    mockCount: 0,
-    leaked: false,
+    body: raw, processed: false, detected: 0, swapCount: 0,
+    injected: false, types: [], mockCount: 0, leaked: false,
   });
 
   if (raw.length === 0) return passthrough();
-
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw.toString("utf8"));
@@ -125,46 +144,23 @@ export async function runDetectorSwap(
   }
   if (parsed === null || typeof parsed !== "object") return passthrough();
 
-  const acc: Acc = { detected: 0, types: [], mocks: new Set(), leaked: false };
-  // Cache by content: re-sent history strings are a cheap hit (the mappings
-  // they produced are already in the session store), so only NEW text is
-  // scanned. The cached result is replayed into `acc` for the same per-request
-  // accounting (block/inject decision, counts) without re-scanning.
-  await adapter.forEachText(parsed, (text) => {
-    const r = cache.memo(text, () => computeSwap(text, config, store));
-    acc.detected += r.detected;
-    for (const t of r.types) acc.types.push(t);
-    for (const mck of r.mocks) acc.mocks.add(mck);
-    if (r.leaked) acc.leaked = true;
-    return r.out;
-  });
+  const r = await applyDetectorSwap(adapter, parsed, config, store, cache);
+  if (r.detected === 0) return { ...passthrough(), processed: true };
 
-  if (acc.detected === 0) {
-    // Nothing matched — forward the original bytes untouched. No injection
-    // when there are no mocks to preserve.
-    return { ...passthrough(), processed: true };
-  }
-
-  // Count mocks on the swapped body BEFORE injecting the directive, so the
-  // directive's illustrative example token doesn't inflate the metric.
   const mockCount = (JSON.stringify(parsed).match(/WYLOC_MOCK_/g) ?? []).length;
-
-  // System-prompt injection (config toggle, default on). Only when we
-  // actually swapped something this request — i.e. mocks are present.
   let injected = false;
   if (config.injectSystemPrompt) {
     adapter.injectDirective(parsed);
     injected = true;
   }
-
   return {
     body: Buffer.from(JSON.stringify(parsed), "utf8"),
     processed: true,
-    detected: acc.detected,
-    swapCount: acc.mocks.size,
+    detected: r.detected,
+    swapCount: r.swapCount,
     injected,
-    types: acc.types,
+    types: r.types,
     mockCount,
-    leaked: acc.leaked,
+    leaked: r.leaked,
   };
 }
