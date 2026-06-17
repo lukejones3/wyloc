@@ -15,7 +15,7 @@ format. Routing is by endpoint:
 | **Claude Code** | `ANTHROPIC_BASE_URL` | `/v1/messages` | `api.anthropic.com` |
 | **Codex CLI** | `~/.codex/config.toml` `openai_base_url` | `/v1/responses` | `api.openai.com` |
 | **OpenAI Chat clients** | `OPENAI_BASE_URL` | `/v1/chat/completions` | `api.openai.com` |
-| **Gemini CLI** | `GEMINI_BASE_URL` | `/v1beta/models/*:generateContent` | `generativelanguage.googleapis.com` |
+| **Gemini CLI** | `GOOGLE_GEMINI_BASE_URL` | `/v1beta/models/*:generateContent` | `generativelanguage.googleapis.com` |
 
 The OpenAI Chat endpoint covers the broader OpenAI-compatible ecosystem —
 **Aider, Goose, OpenCode, Continue, Cline, Roo Code, Kilo Code** all speak Chat

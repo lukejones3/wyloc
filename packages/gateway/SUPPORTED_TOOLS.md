@@ -42,13 +42,13 @@ All speak **OpenAI Chat Completions** (`/v1/chat/completions`), masked fully.
 
 | Tool | Base-URL config | Wire format | File-reads via endpoint? | `wyloc setup` | Verification |
 | --- | --- | --- | --- | --- | --- |
-| **Aider** | `~/.aider.conf.yml` → `openai-api-base` (also `OPENAI_API_BASE` env) | Chat Completions (litellm) | Yes — adds file contents to the prompt | **Automated** | config doc-confirmed; setup **unit-tested**; ⚠ end-to-end needs live run |
-| **Goose** | `OPENAI_HOST` env (`GOOSE_PROVIDER=openai`) | Chat Completions | Yes — local CLI/desktop | Manual* | env/Chat doc-confirmed; ⚠ exact YAML key unverified → no auto-setup |
-| **OpenCode** | `opencode.json` → `provider.<id>.options.baseURL` | Chat Completions | Yes — local CLI | Manual | doc-confirmed; ⚠ end-to-end needs live run |
-| **Continue** | `~/.continue/config.yaml` → per-model `apiBase` | Chat Completions | Yes — local IDE extension | Manual | doc-confirmed; ⚠ end-to-end needs live run |
-| **Cline** | VS Code UI → "OpenAI Compatible" + Base URL (extension globalState) | Chat Completions | Yes — local IDE extension, no backend | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
-| **Roo Code** | VS Code UI (globalState `ProviderProfiles`) | Chat Completions | Yes — local IDE extension (Cline fork) | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
-| **Kilo Code** | VS Code UI (globalState) | Chat Completions | Yes — local IDE extension | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
+| **Aider** | `~/.aider.conf.yml` → `openai-api-base` (also `OPENAI_API_BASE` env) | Chat Completions (litellm) | Yes — adds file contents to the prompt | **Automated** | **live-verified** (v0.86.2): typed secret masked upstream + rehydrated, via BOTH `.aider.conf.yml` `openai-api-base` and the env var; setup unit-tested |
+| **Goose** | `OPENAI_HOST` env (`GOOSE_PROVIDER=openai`) | Chat Completions | Yes — local CLI/desktop | Manual* | **live-verified** (v1.38.0): `OPENAI_HOST` → gateway, typed secret masked + rehydrated; `config.yaml` key still unverified → no auto-setup |
+| **OpenCode** | `opencode.json` → `provider.<id>.options.baseURL` | Chat Completions | Yes — local CLI | Manual | doc-confirmed (OpenAI Chat, AI SDK); ⚠ could not drive `opencode run` headlessly in the test env (it printed its model header but emitted no API call) — routing inferred from the identical Chat wire format verified live in Aider + Goose |
+| **Continue** | `~/.continue/config.yaml` → per-model `apiBase` | Chat Completions | Yes — local IDE extension | Manual | doc-confirmed; ⚠ needs VS Code — not headless-testable here |
+| **Cline** | VS Code UI → "OpenAI Compatible" + Base URL (extension globalState) | Chat Completions | Yes — local IDE extension, no backend | Manual** | doc-confirmed; ⚠ needs VS Code — not headless-testable here |
+| **Roo Code** | VS Code UI (globalState `ProviderProfiles`) | Chat Completions | Yes — local IDE extension (Cline fork) | Manual** | doc-confirmed; ⚠ needs VS Code — not headless-testable here |
+| **Kilo Code** | VS Code UI (globalState) | Chat Completions | Yes — local IDE extension | Manual** | doc-confirmed; ⚠ needs VS Code — not headless-testable here |
 
 \* **Goose**: covered as-is, but `wyloc setup` does **not** auto-wire it — only
 the `OPENAI_HOST` *env var* is doc-confirmed; the exact `config.yaml` key is not,
@@ -64,7 +64,7 @@ state** (a SQLite `state.vscdb`), not a plain config file — no safe file for
 
 | Tool | Routing | Wire format | File-reads via endpoint? | `wyloc setup` | Verification |
 | --- | --- | --- | --- | --- | --- |
-| **Gemini CLI** | `GEMINI_BASE_URL` env overrides the origin → gateway | Google `generateContent` / `streamGenerateContent` | Yes — `functionResponse.response` through the file-read router | Manual† | adapter masking + SSE rehydration **unit-tested**; ⚠ end-to-end against a real install needs a live run |
+| **Gemini CLI** | `GOOGLE_GEMINI_BASE_URL` env overrides the origin → gateway | Google `generateContent` / `streamGenerateContent` | Yes — `functionResponse.response` through the file-read router | Manual† | **live-verified** (v0.46.0): typed-secret + agentic file-read both masked upstream and rehydrated |
 
 The gateway masks `/v1beta/models/*:generateContent` and `:streamGenerateContent`
 (other `/v1beta/*` actions — `:countTokens`, `:embedContent` — forward unmasked).
@@ -74,9 +74,11 @@ content-router as the other adapters, and leaves `functionCall` /
 `functionDeclarations` / `inlineData` byte-intact. The streamed response is
 rehydrated over its incremental SSE deltas.
 
-† **Gemini CLI** is env-only (`GEMINI_BASE_URL`) with no doc-confirmed config
-file for the endpoint, so — same call as the globalState/env-only tools above —
-the manual step is documented rather than auto-wired.
+† **Gemini CLI** is env-only (`GOOGLE_GEMINI_BASE_URL`) with no doc-confirmed
+config file for the endpoint, so — same call as the globalState/env-only tools
+above — the manual step is documented rather than auto-wired. (Live testing also
+showed headless runs need an auth type selected and the workspace trusted — see
+the snippet below; interactive use just needs the two env vars.)
 
 ### Manual configuration snippets
 
@@ -120,9 +122,13 @@ models:
 OpenAI key (the gateway relays it).
 
 **Gemini CLI** — environment (origin override; the CLI appends the
-`/v1beta/models/...` path):
+`/v1beta/models/...` path). The env var is `GOOGLE_GEMINI_BASE_URL` (verified
+against gemini-cli v0.46.0 — *not* `GEMINI_BASE_URL`):
 ```sh
-export GEMINI_BASE_URL=http://127.0.0.1:8787   # use your Gemini API key as normal
+export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8787   # use your Gemini API key as normal
+# Headless/CI also needs an auth type + trusted workspace:
+#   settings.json: {"security":{"auth":{"selectedType":"gemini-api-key"}}}
+#   and: gemini --yolo --skip-trust  (or GEMINI_CLI_TRUST_WORKSPACE=true)
 ```
 
 ---
@@ -157,6 +163,9 @@ are covered as-is (point BYOK at the gateway).
 
 ## Verification labels
 
+- **live-verified** — the real tool (named version) was run against the gateway:
+  its traffic routed through, the secret was masked in what the gateway forwarded
+  to a captured upstream, and the response rehydrated back to the real value.
 - **doc-confirmed** — base-URL config + wire format verified against the tool's
   own documentation.
 - **⚠ end-to-end needs live run** — file-read routing and full mask→rehydrate
