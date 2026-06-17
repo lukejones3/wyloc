@@ -1,67 +1,82 @@
 # Supported agentic-coding tools
 
-How each tool routes through the gateway, what wire format it speaks, and what
-that means for coverage. The masking engine (detector, SQL, code, `.env`,
-file-read/tool-result, config) is **wire-agnostic and identical across every
-adapter** — coverage is purely a question of *wire format* + *routing*, never of
-which secrets get masked.
+**The single source of truth for what Wyloc covers.** How each tool routes
+through the gateway, what wire format it speaks, and what that means for
+coverage. The masking engine (detector, SQL, code, `.env`, file-read/tool-result,
+config) is **wire-agnostic and identical across every adapter** — coverage is
+purely a question of *wire format* + *routing*, never of which secrets get
+masked.
 
 ## The two make-or-break questions
 
 1. **Can the tool's traffic be pointed at the gateway?** (a configurable
-   base URL / OpenAI-compatible endpoint)
+   base URL / OpenAI-compatible endpoint, or an origin override)
 2. **Does the tool's agentic file-reading go *through that same endpoint*?**
-   If the agent runs server-side and reads files on a vendor backend (like
-   Cursor's agent), coverage is chat-only and an adapter can't help — it needs
-   enterprise network-level routing. Every tool below is a **local-process agent**
-   (a CLI or an IDE extension running on your machine) with **no vendor backend**:
-   it reads files locally and sends their contents to the LLM inside the request
-   it makes to the configured endpoint. So file-reads route through the gateway.
-   This is **doc/architecture-confirmed**; ⚠ flags where only a live run against a
-   real install can make it *end-to-end-verified*.
+   If the agent runs server-side and reads files on a vendor backend, coverage
+   is impossible at this layer — it needs enterprise network-level routing. A
+   **local-process agent** (a CLI or an IDE extension on your machine, with no
+   vendor backend) reads files locally and sends their contents to the LLM
+   inside the request it makes to the configured endpoint, so file-reads route
+   through the gateway. This is **doc/architecture-confirmed**; ⚠ flags where
+   only a live run against a real install can make it *end-to-end-verified*.
 
-## Routing constraint (applies to every OpenAI-compatible tool)
+## Routing constraint (every OpenAI-compatible tool)
 
 The gateway routes by **path**: `/v1/chat/completions` → its OpenAI upstream,
-`/v1/messages` → Anthropic, `/v1/responses` → OpenAI Responses. The OpenAI
-upstream is a **single** value (`WYLOC_OPENAI_UPSTREAM_BASE_URL`, default
-`api.openai.com`). So an OpenAI-compatible tool is covered when its backend is
-that one upstream. Using a non-OpenAI OpenAI-compatible backend (OpenRouter,
-DeepSeek, a local server)? Point the gateway at it with
-`WYLOC_OPENAI_UPSTREAM_BASE_URL` — one upstream per gateway, per-request
-provider routing is not supported.
+`/v1/messages` → Anthropic, `/v1/responses` → OpenAI Responses,
+`/v1beta/models/*:generateContent` → Gemini. Each upstream is a **single**
+configurable value (`WYLOC_OPENAI_UPSTREAM_BASE_URL`, default `api.openai.com`,
+etc.). So an OpenAI-compatible tool is covered when its backend is that one
+upstream; for a non-OpenAI OpenAI-compatible backend (OpenRouter, DeepSeek, a
+local server) point the gateway's upstream at it — one upstream per gateway, no
+per-request provider routing.
 
-For every OpenAI-compatible tool, the base URL to configure is
+For every OpenAI-compatible tool the base URL to configure is
 **`http://<gateway-host>:<port>/v1`** (the client appends `/chat/completions`).
 
 ---
 
-## Group A — covered today by existing adapters
+## Group A — covered today by the OpenAI Chat adapter
 
-All speak **OpenAI Chat Completions** (`/v1/chat/completions`), which the gateway
-masks fully (real protection — unlike Codex's Responses traffic, which only
-became masked once the Responses adapter shipped).
+All speak **OpenAI Chat Completions** (`/v1/chat/completions`), masked fully.
 
-| Tool | Base-URL config | Wire format | File-reads through endpoint? | `wyloc setup` | Verification |
+| Tool | Base-URL config | Wire format | File-reads via endpoint? | `wyloc setup` | Verification |
 | --- | --- | --- | --- | --- | --- |
-| **Aider** | `~/.aider.conf.yml` → `openai-api-base` (also `OPENAI_API_BASE` env / `--openai-api-base`) | Chat Completions (via litellm) | Yes — adds file contents to the prompt it sends | **Automated** | config doc-confirmed; ⚠ end-to-end needs live run |
-| **Goose** | `~/.config/goose/config.yaml` / `OPENAI_HOST` env (`GOOSE_PROVIDER=openai`) | Chat Completions | Yes — local CLI/desktop agent | Manual* | env/Chat doc-confirmed; ⚠ exact YAML key unverified → no auto-setup |
-| **OpenCode** | `opencode.json` → `provider.<id>.options.baseURL` (`@ai-sdk/openai-compatible`) | Chat Completions | Yes — local CLI agent | Manual | doc-confirmed; ⚠ end-to-end needs live run |
-| **Continue** | `~/.continue/config.yaml` → per-model `apiBase` (`provider: openai`) | Chat Completions | Yes — local IDE extension | Manual | doc-confirmed; ⚠ end-to-end needs live run |
-| **Cline** | VS Code settings UI → "OpenAI Compatible" + Base URL (stored in extension globalState, not a writable file) | Chat Completions | Yes — local IDE extension, open-source, no backend | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
-| **Roo Code** | VS Code settings UI → "OpenAI Compatible" + Base URL (globalState / `ProviderProfiles`) | Chat Completions | Yes — local IDE extension (Cline fork) | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
-| **Kilo Code** | VS Code settings UI → "OpenAI Compatible" + Base URL (globalState) | Chat Completions | Yes — local IDE extension (Roo/Cline lineage) | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
+| **Aider** | `~/.aider.conf.yml` → `openai-api-base` (also `OPENAI_API_BASE` env) | Chat Completions (litellm) | Yes — adds file contents to the prompt | **Automated** | config doc-confirmed; setup **unit-tested**; ⚠ end-to-end needs live run |
+| **Goose** | `OPENAI_HOST` env (`GOOSE_PROVIDER=openai`) | Chat Completions | Yes — local CLI/desktop | Manual* | env/Chat doc-confirmed; ⚠ exact YAML key unverified → no auto-setup |
+| **OpenCode** | `opencode.json` → `provider.<id>.options.baseURL` | Chat Completions | Yes — local CLI | Manual | doc-confirmed; ⚠ end-to-end needs live run |
+| **Continue** | `~/.continue/config.yaml` → per-model `apiBase` | Chat Completions | Yes — local IDE extension | Manual | doc-confirmed; ⚠ end-to-end needs live run |
+| **Cline** | VS Code UI → "OpenAI Compatible" + Base URL (extension globalState) | Chat Completions | Yes — local IDE extension, no backend | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
+| **Roo Code** | VS Code UI (globalState `ProviderProfiles`) | Chat Completions | Yes — local IDE extension (Cline fork) | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
+| **Kilo Code** | VS Code UI (globalState) | Chat Completions | Yes — local IDE extension | Manual** | doc-confirmed; ⚠ end-to-end needs live run |
 
-\* **Goose** is covered as-is, but `wyloc setup` does **not** auto-wire it: only
+\* **Goose**: covered as-is, but `wyloc setup` does **not** auto-wire it — only
 the `OPENAI_HOST` *env var* is doc-confirmed; the exact `config.yaml` key is not,
-and writing a wrong YAML key is worse than documenting. Wire it manually (below)
-or set `OPENAI_HOST`/`GOOSE_PROVIDER` in your environment.
+and writing a wrong key is worse than documenting.
 
-\** **Cline / Roo / Kilo** store the base URL in VS Code **extension global
-state** (a SQLite `state.vscdb`), not a plain config file. There is no safe,
-stable file for `wyloc setup` to write, so these are configured by hand through
-the extension's settings panel ("OpenAI Compatible" provider → Base URL). The
-masking itself is fully covered once the traffic is pointed at the gateway.
+\** **Cline / Roo / Kilo**: the base URL lives in VS Code **extension global
+state** (a SQLite `state.vscdb`), not a plain config file — no safe file for
+`wyloc setup` to write, so configured by hand in the extension settings panel.
+
+---
+
+## Covered by the dedicated Gemini adapter
+
+| Tool | Routing | Wire format | File-reads via endpoint? | `wyloc setup` | Verification |
+| --- | --- | --- | --- | --- | --- |
+| **Gemini CLI** | `GEMINI_BASE_URL` env overrides the origin → gateway | Google `generateContent` / `streamGenerateContent` | Yes — `functionResponse.response` through the file-read router | Manual† | adapter masking + SSE rehydration **unit-tested**; ⚠ end-to-end against a real install needs a live run |
+
+The gateway masks `/v1beta/models/*:generateContent` and `:streamGenerateContent`
+(other `/v1beta/*` actions — `:countTokens`, `:embedContent` — forward unmasked).
+It masks `contents[].parts[].text` + `systemInstruction` parts, routes
+`functionResponse.response` (where read file content lands) through the same
+content-router as the other adapters, and leaves `functionCall` /
+`functionDeclarations` / `inlineData` byte-intact. The streamed response is
+rehydrated over its incremental SSE deltas.
+
+† **Gemini CLI** is env-only (`GEMINI_BASE_URL`) with no doc-confirmed config
+file for the endpoint, so — same call as the globalState/env-only tools above —
+the manual step is documented rather than auto-wired.
 
 ### Manual configuration snippets
 
@@ -100,20 +115,43 @@ models:
     apiBase: http://127.0.0.1:8787/v1
 ```
 
-**Cline / Roo Code / Kilo Code** — in the extension settings panel: API Provider
-= **OpenAI Compatible**, Base URL = `http://127.0.0.1:8787/v1`, API Key = your
-real OpenAI key (the gateway relays it).
+**Cline / Roo Code / Kilo Code** — extension settings panel: API Provider =
+**OpenAI Compatible**, Base URL = `http://127.0.0.1:8787/v1`, API Key = your real
+OpenAI key (the gateway relays it).
+
+**Gemini CLI** — environment (origin override; the CLI appends the
+`/v1beta/models/...` path):
+```sh
+export GEMINI_BASE_URL=http://127.0.0.1:8787   # use your Gemini API key as normal
+```
 
 ---
 
-## Group B — needs its own adapter (or can't be routed)
+## Vendor-locked backends — require enterprise network-level routing
 
-| Tool | Wire format | Routable? | Verdict |
+These tools run their agent on a **vendor backend**, so the agent's traffic
+(including the file contents it reads) never passes through a base URL you
+control. Wyloc cannot mask them at the client layer; the only option is
+**enterprise network-level routing** (e.g. an egress proxy / MITM on the
+corporate network), the same situation as Cursor's agent. **No adapter is
+built or planned** for the locked mode — there is nothing to point at the
+gateway.
+
+Several of them *also* offer a **BYOK mode** that bypasses the vendor backend and
+hits a configurable endpoint directly. In that mode they drop to **Group A** and
+are covered as-is (point BYOK at the gateway).
+
+| Tool | Locked default (→ enterprise routing) | BYOK mode (→ covered) | Verification |
 | --- | --- | --- | --- |
-| **Gemini CLI** | Google `generateContent` / `streamGenerateContent` — **not** OpenAI | Yes — `GEMINI_BASE_URL` env points it at a custom endpoint | **Needs a Gemini adapter.** The endpoint is configurable (routing is fine), but the wire format is Google's, which no existing adapter speaks. Scoped in Phase 2. |
+| **GitHub Copilot** | Native models go through GitHub's auth proxy (`api.githubcopilot.com`) on GitHub OAuth tokens — locked. | **BYOK** (2026, VS Code + Copilot CLI): custom base URL, **OpenAI-compatible** → Group A (Chat) | doc-confirmed; ⚠ BYOK file-read routing needs live run |
+| **Windsurf** | Cascade agent runs on the Codeium backend — locked. | Some builds expose a custom OpenAI-compatible base URL → Group A | doc-confirmed; ⚠ varies by build/version |
+| **Augment Code** | Default agent runs on Augment's proprietary context-engine backend — locked. | **BYOK** sets `base_url` + wire protocol (OpenAI-compatible *or* Anthropic-native) → Group A (both covered) | doc-confirmed; ⚠ BYOK file-read routing needs live run |
+| **AWS Kiro** | Agentic IDE; models served via AWS/Bedrock but IDE→model traffic goes through Kiro's service — no user-configurable endpoint found. | None found. | ⚠ doc-inconclusive; leaning locked |
+| **Cursor (agent)** | Composer/agent runs server-side on Cursor's backend; file-reads never hit a configurable endpoint — locked. | Chat with a custom OpenAI base URL covers chat only, not the agent. | doc-confirmed |
 
-(Phase 2 also investigates GitHub Copilot, Windsurf, Augment Code, and AWS Kiro —
-see the Phase 2 scope report.)
+> **Reason (all of the above):** vendor-locked agent backend — the same class of
+> limitation as Cursor's agent. Masking requires the request (with its file
+> contents) to traverse an endpoint you control, which the locked mode does not.
 
 ---
 
@@ -122,7 +160,10 @@ see the Phase 2 scope report.)
 - **doc-confirmed** — base-URL config + wire format verified against the tool's
   own documentation.
 - **⚠ end-to-end needs live run** — file-read routing and full mask→rehydrate
-  round-trip inferred from the tool's local-agent architecture (no vendor
-  backend), but not yet exercised against a real install.
-- **unit-tested** — `wyloc setup`/`unsetup` for the tool is covered by
-  `test-cli.mjs` (currently: Claude Code, Codex, Aider).
+  round-trip inferred from the tool's local-agent architecture, not yet
+  exercised against a real install.
+- **⚠ doc-inconclusive** — the tool's docs did not confirm a custom-endpoint
+  path; the verdict is the best available inference and should be re-checked.
+- **unit-tested** — exercised by the gateway test suite. `wyloc setup`/`unsetup`:
+  Claude Code, Codex, Aider (`test-cli.mjs`). Adapter masking + rehydration:
+  Anthropic, OpenAI-Chat, OpenAI-Responses, **Gemini** (`test-gemini-*.mjs`).
