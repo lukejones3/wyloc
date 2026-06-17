@@ -16,6 +16,13 @@ format. Routing is by endpoint:
 | **Codex CLI** | `~/.codex/config.toml` `openai_base_url` | `/v1/responses` | `api.openai.com` |
 | **OpenAI Chat clients** | `OPENAI_BASE_URL` | `/v1/chat/completions` | `api.openai.com` |
 
+Those three endpoints cover the broader OpenAI-compatible ecosystem — **Aider,
+Goose, OpenCode, Continue, Cline, Roo Code, Kilo Code** all speak Chat
+Completions and are masked as-is once pointed at the gateway. See
+[**SUPPORTED_TOOLS.md**](./SUPPORTED_TOOLS.md) for the per-tool routing,
+wire-format, file-read, and `wyloc setup` matrix (and which tools — e.g. Gemini
+CLI — need a dedicated adapter).
+
 Auth is **relayed, never replaced** — `x-api-key` (Anthropic) and
 `Authorization: Bearer` (OpenAI) each pass straight through to the matching
 upstream, and `Host` is set per-provider.
@@ -155,7 +162,7 @@ macOS, signtool on Windows; pure-Python sqlglot needs no per-OS compile).
 
 ```
 wyloc                     run the gateway (foreground)
-wyloc setup [--yes]       detect Claude Code / Codex, show changes, point them at the gateway
+wyloc setup [--yes]       detect Claude Code / Codex / Aider, show changes, point them at the gateway
 wyloc unsetup             revert exactly what setup changed (originals restored)
 wyloc service <cmd>       install|uninstall|start|stop|status|enable|disable
 wyloc status              gateway health + setup status
