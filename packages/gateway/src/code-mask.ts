@@ -20,6 +20,7 @@
  */
 
 import { CodeMasker, resolveConfig } from "@wyloc/code-masker";
+import { MaskCache } from "./mask-cache.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -53,6 +54,8 @@ function passthrough(raw: Buffer): CodeMaskBodyOutcome {
 /** Owns the (reused, in-process) code masker for the gateway process. */
 export class CodeMaskHandle {
   private readonly masker: CodeMasker | null;
+  /** Per-session content cache so re-sent code blocks aren't re-parsed each turn. */
+  readonly cache = new MaskCache();
 
   constructor(
     private readonly config: GatewayConfig,
@@ -103,9 +106,14 @@ export class CodeMaskHandle {
   }
 
   /** Mask TS/JS within one text string. Returns the rewritten text + counts. */
+  /** Content-cached wrapper: re-sent fenced code isn't re-parsed each turn
+   *  (mappings already in the store). */
   private maskText(text: string, store: SessionStore): { text: string; blocks: number; masked: number } {
     if (text.length === 0) return { text, blocks: 0, masked: 0 };
+    return this.cache.memo(text, () => this.maskTextUncached(text, store));
+  }
 
+  private maskTextUncached(text: string, store: SessionStore): { text: string; blocks: number; masked: number } {
     const fences = [...text.matchAll(FENCE)];
     if (fences.length === 0) return { text, blocks: 0, masked: 0 };
 

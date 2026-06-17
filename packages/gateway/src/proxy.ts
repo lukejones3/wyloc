@@ -25,6 +25,7 @@ import type { SessionStore } from "./session.js";
 import type { SqlMaskHandle } from "./sql-mask.js";
 import type { CodeMaskHandle } from "./code-mask.js";
 import type { FileReadMaskHandle } from "./mask-file-reads.js";
+import type { MaskCache } from "./mask-cache.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import { runDetectorSwap } from "./swap-request.js";
 import {
@@ -68,6 +69,8 @@ export interface ProxyContext {
    * maskFileReads is off.
    */
   fileReadMask: FileReadMaskHandle | null;
+  /** Per-session cache for the message-text detector swap (re-sent history → hit). */
+  detectorCache: MaskCache;
 }
 
 /**
@@ -78,8 +81,9 @@ export async function forward(
   res: ServerResponse,
   ctx: ProxyContext,
 ): Promise<void> {
-  const { config, log, path, store, inspect, sqlMask, codeMask, fileReadMask, adapter, upstreamBaseUrl } = ctx;
+  const { config, log, path, store, inspect, sqlMask, codeMask, fileReadMask, detectorCache, adapter, upstreamBaseUrl } = ctx;
   const started = Date.now();
+  let maskMs = 0; // time spent in request masking (separate from upstream latency)
 
   // 1. Buffer the request body.
   const reqBody = await readBody(req);
@@ -90,6 +94,7 @@ export async function forward(
   // rewritten bytes. For all other paths we forward untouched.
   let outboundBody = reqBody;
   if (inspect) {
+    const maskStart = Date.now();
     // SQL-masking pass (optional): mask proprietary identifiers + scrub
     // sensitive literals in any SQL, BEFORE the detector swap runs. Mappings
     // are folded into the same store, so the response rehydrates them too.
@@ -135,7 +140,7 @@ export async function forward(
       }
     }
 
-    const outcome = await runDetectorSwap(adapter, bodyForSwap, config, store);
+    const outcome = await runDetectorSwap(adapter, bodyForSwap, config, store, detectorCache);
 
     if (outcome.detected > 0) {
       // Metadata-only logging (gated by WYLOC_VERBOSE / DEBUG). NEVER logs
@@ -185,6 +190,7 @@ export async function forward(
         /* non-JSON body shouldn't reach here; leave as-is if it does */
       }
     }
+    maskMs = Date.now() - maskStart;
   }
 
   // 2. Forward to upstream with the caller's own credentials/headers.
@@ -222,7 +228,7 @@ export async function forward(
   if (!upstream.body) {
     res.end();
     log.debug(
-      `${req.method} ${path} -> ${upstream.status} (${Date.now() - started}ms, no body)`,
+      `${req.method} ${path} -> ${upstream.status} (${Date.now() - started}ms total, masking ${maskMs}ms, no body)`,
     );
     return;
   }
@@ -255,7 +261,10 @@ export async function forward(
   }
 
   log.debug(
-    `${req.method} ${path} -> ${upstream.status} (${Date.now() - started}ms)`,
+    // Separates masking overhead from upstream/model latency — answers
+    // "is the slowness us or the model" and catches masking regressions.
+    `${req.method} ${path} -> ${upstream.status} ` +
+      `(${Date.now() - started}ms total, masking ${maskMs}ms, upstream+stream ${Date.now() - started - maskMs}ms)`,
   );
 }
 

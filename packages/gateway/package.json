@@ -14,7 +14,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx test-rehydrate-unit.mjs && node test-passthrough.mjs && node test-swap.mjs && node test-roundtrip.mjs && node test-sql-mask.mjs && node test-openai-mask.mjs && node test-code-mask.mjs && node test-file-read-mask.mjs && node --import tsx test-wyloc-config.mjs && node test-wyloc-gateway.mjs && node --import tsx test-wyloc-remote.mjs && node --import tsx test-cli.mjs && node test-responses-mask.mjs && node --import tsx test-responses-rehydrate.mjs"
+    "test": "node --import tsx test-rehydrate-unit.mjs && node test-passthrough.mjs && node test-swap.mjs && node test-roundtrip.mjs && node test-sql-mask.mjs && node test-openai-mask.mjs && node test-code-mask.mjs && node test-file-read-mask.mjs && node --import tsx test-wyloc-config.mjs && node test-wyloc-gateway.mjs && node --import tsx test-wyloc-remote.mjs && node --import tsx test-cli.mjs && node test-responses-mask.mjs && node --import tsx test-responses-rehydrate.mjs && node --import tsx test-mask-cache.mjs"
   },
   "dependencies": {
     "@wyloc/code-masker": "*",

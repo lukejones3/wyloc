@@ -21,6 +21,7 @@
 
 import { SqlMasker, SqlglotWorker, resolveConfig } from "@wyloc/sql-masker";
 import { bundledPython, bundledSqlWorker } from "./runtime.js";
+import { MaskCache } from "./mask-cache.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -48,6 +49,8 @@ export class SqlMaskHandle {
   private readonly worker: SqlglotWorker | null;
   private readonly readyPromise: Promise<boolean>;
   private loggedDisabled = false;
+  /** Per-session content cache so re-sent SQL isn't re-parsed each turn. */
+  readonly cache = new MaskCache();
 
   constructor(
     private readonly config: GatewayConfig,
@@ -124,12 +127,20 @@ export class SqlMaskHandle {
   }
 
   /** Mask SQL within one text string. Returns the rewritten text + counts. */
+  /** Content-cached wrapper: re-sent SQL blocks are a hit (mappings already in
+   *  the store), so sqlglot only parses NEW content per turn. */
   private async maskText(
     text: string,
     store: SessionStore,
   ): Promise<{ text: string; blocks: number; masked: number }> {
     if (text.length === 0) return { text, blocks: 0, masked: 0 };
+    return this.cache.memoAsync(text, () => this.maskTextUncached(text, store));
+  }
 
+  private async maskTextUncached(
+    text: string,
+    store: SessionStore,
+  ): Promise<{ text: string; blocks: number; masked: number }> {
     const fences = [...text.matchAll(FENCE)];
     if (fences.length > 0) {
       let out = "";

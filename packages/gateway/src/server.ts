@@ -15,6 +15,7 @@ import { SessionStore } from "./session.js";
 import { SqlMaskHandle } from "./sql-mask.js";
 import { CodeMaskHandle } from "./code-mask.js";
 import { FileReadMaskHandle } from "./mask-file-reads.js";
+import { MaskCache } from "./mask-cache.js";
 import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
 import { ResponsesAdapter } from "./adapters/responses.js";
@@ -38,6 +39,10 @@ export function createGateway(config: GatewayConfig): Server {
   // One ephemeral store for the lifetime of this gateway process. Holds
   // real↔mock mappings in memory only; never persisted, never logged.
   const store = new SessionStore();
+  // Per-session cache for the message-text detector swap (the other passes own
+  // their caches). Re-sent conversation history is a cheap hit; only NEW text
+  // is scanned, so per-turn cost stays proportional to new content.
+  const detectorCache = new MaskCache();
 
   const anthropicAdapter = new AnthropicAdapter(config.upstreamBaseUrl);
   const openaiAdapter = new OpenAIAdapter(config.openaiUpstreamBaseUrl);
@@ -123,6 +128,7 @@ export function createGateway(config: GatewayConfig): Server {
       sqlMask: config.maskSql ? sqlMask : null,
       codeMask: config.maskCode ? codeMask : null,
       fileReadMask: config.maskFileReads ? fileReadMask : null,
+      detectorCache,
     };
 
     if (isMessages || isCountTokens || isChat || isOpenAiOther || path.startsWith("/v1/")) {

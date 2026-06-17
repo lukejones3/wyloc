@@ -17,6 +17,7 @@ import { scan, buildSwap, type SecretType } from "@wyloc/detector";
 import type { ProviderAdapter } from "./adapters/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { SessionStore } from "./session.js";
+import type { MaskCache } from "./mask-cache.js";
 
 export interface SwapOutcome {
   /** Bytes to forward upstream (rewritten if anything was swapped). */
@@ -57,24 +58,34 @@ interface Acc {
   leaked: boolean;
 }
 
-/** Scan one string, swap any secrets, record mappings. Returns new text. */
-function swapText(text: string, config: GatewayConfig, store: SessionStore, acc: Acc): string {
-  if (text.length === 0) return text;
+/** Deterministic result of scanning one string — cacheable (depends only on
+ *  the text + the session salt, both stable within a session). */
+interface SwapResult {
+  out: string;
+  detected: number;
+  types: SecretType[];
+  mocks: string[];
+  leaked: boolean;
+}
+
+/** Scan one string, swap any secrets, record mappings into the store. */
+function computeSwap(text: string, config: GatewayConfig, store: SessionStore): SwapResult {
+  if (text.length === 0) return { out: text, detected: 0, types: [], mocks: [], leaked: false };
   const result = scan(text, config.detector);
-  if (result.findings.length === 0) return text;
+  if (result.findings.length === 0) return { out: text, detected: 0, types: [], mocks: [], leaked: false };
 
   const { swappedText, mappings } = buildSwap(text, result.findings, store.saltValue);
   store.add(mappings);
 
-  acc.detected += result.findings.length;
-  for (const f of result.findings) acc.types.push(f.type);
+  let leaked = false;
+  const mocks: string[] = [];
   for (const m of mappings) {
-    acc.mocks.add(m.mock);
-    // Leak guard, scoped to THIS rewritten string: the real value must
-    // not survive the swap. Checked and discarded immediately.
-    if (m.real.length > 0 && swappedText.includes(m.real)) acc.leaked = true;
+    mocks.push(m.mock);
+    // Leak guard, scoped to THIS rewritten string: the real value must not
+    // survive the swap. (Deterministic for a given text, so safe to cache.)
+    if (m.real.length > 0 && swappedText.includes(m.real)) leaked = true;
   }
-  return swappedText;
+  return { out: swappedText, detected: result.findings.length, types: result.findings.map((f) => f.type), mocks, leaked };
 }
 
 /**
@@ -91,6 +102,7 @@ export async function runDetectorSwap(
   raw: Buffer,
   config: GatewayConfig,
   store: SessionStore,
+  cache: MaskCache,
 ): Promise<SwapOutcome> {
   const passthrough = (): SwapOutcome => ({
     body: raw,
@@ -114,7 +126,18 @@ export async function runDetectorSwap(
   if (parsed === null || typeof parsed !== "object") return passthrough();
 
   const acc: Acc = { detected: 0, types: [], mocks: new Set(), leaked: false };
-  await adapter.forEachText(parsed, (text) => swapText(text, config, store, acc));
+  // Cache by content: re-sent history strings are a cheap hit (the mappings
+  // they produced are already in the session store), so only NEW text is
+  // scanned. The cached result is replayed into `acc` for the same per-request
+  // accounting (block/inject decision, counts) without re-scanning.
+  await adapter.forEachText(parsed, (text) => {
+    const r = cache.memo(text, () => computeSwap(text, config, store));
+    acc.detected += r.detected;
+    for (const t of r.types) acc.types.push(t);
+    for (const mck of r.mocks) acc.mocks.add(mck);
+    if (r.leaked) acc.leaked = true;
+    return r.out;
+  });
 
   if (acc.detected === 0) {
     // Nothing matched — forward the original bytes untouched. No injection
