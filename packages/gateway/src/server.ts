@@ -15,6 +15,7 @@ import { SessionStore } from "./session.js";
 import { SqlMaskHandle } from "./sql-mask.js";
 import { CodeMaskHandle } from "./code-mask.js";
 import { FileReadMaskHandle } from "./mask-file-reads.js";
+import { EnvMaskHandle } from "./env-mask.js";
 import { MaskCache } from "./mask-cache.js";
 import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
@@ -74,7 +75,14 @@ export function createGateway(config: GatewayConfig): Server {
   // files the agent reads on its own — reusing the SQL/code handles + detector.
   const fileReadMask = new FileReadMaskHandle(config, sqlMask, codeMask, log);
   if (config.maskFileReads) {
-    log.info("File-read masking enabled (raw tool-result file bodies: detector always, SQL/code per toggle)");
+    log.info("File-read masking enabled (raw tool-result file bodies: detector always, SQL/code/env per toggle)");
+  }
+
+  // Env masking (on by default): masks the values of typed/pasted env content;
+  // agent-read .env files are covered by the file-read content-router above.
+  const envMask = new EnvMaskHandle(config, log);
+  if (config.maskEnv) {
+    log.info("Env masking enabled (KEY=value files: values masked, keys + structure kept)");
   }
 
   const server = createServer((req, res) => {
@@ -128,6 +136,7 @@ export function createGateway(config: GatewayConfig): Server {
       sqlMask: config.maskSql ? sqlMask : null,
       codeMask: config.maskCode ? codeMask : null,
       fileReadMask: config.maskFileReads ? fileReadMask : null,
+      envMask: config.maskEnv ? envMask : null,
       detectorCache,
     };
 

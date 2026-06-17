@@ -25,6 +25,7 @@ import type { SessionStore } from "./session.js";
 import type { SqlMaskHandle } from "./sql-mask.js";
 import type { CodeMaskHandle } from "./code-mask.js";
 import type { FileReadMaskHandle } from "./mask-file-reads.js";
+import type { EnvMaskHandle } from "./env-mask.js";
 import type { MaskCache } from "./mask-cache.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import { runDetectorSwap } from "./swap-request.js";
@@ -69,6 +70,13 @@ export interface ProxyContext {
    * maskFileReads is off.
    */
   fileReadMask: FileReadMaskHandle | null;
+  /**
+   * Optional env-masking handle. When present and enabled, env content the user
+   * typed/pasted (a fenced env block, or a whole-message .env) has its values
+   * masked before the detector swap. Null when maskEnv is off. (Files an agent
+   * reads are handled by the file-read content-router, not here.)
+   */
+  envMask: EnvMaskHandle | null;
   /** Per-session cache for the message-text detector swap (re-sent history → hit). */
   detectorCache: MaskCache;
 }
@@ -81,7 +89,7 @@ export async function forward(
   res: ServerResponse,
   ctx: ProxyContext,
 ): Promise<void> {
-  const { config, log, path, store, inspect, sqlMask, codeMask, fileReadMask, detectorCache, adapter, upstreamBaseUrl } = ctx;
+  const { config, log, path, store, inspect, sqlMask, codeMask, fileReadMask, envMask, detectorCache, adapter, upstreamBaseUrl } = ctx;
   const started = Date.now();
   let maskMs = 0; // time spent in request masking (separate from upstream latency)
 
@@ -124,8 +132,20 @@ export async function forward(
       }
     }
 
+    // Env-masking pass (optional): mask the VALUES of any env content the user
+    // typed/pasted (fenced env block or a whole-message .env), keeping keys +
+    // structure visible. Also BEFORE the detector swap. (Agent-read .env files
+    // are handled by the file-read content-router below.)
+    if (envMask) {
+      const envOutcome = await envMask.maskBody(adapter, bodyForSwap, store);
+      bodyForSwap = envOutcome.body;
+      if (envOutcome.blocks > 0) {
+        log.debug(`env-mask: ${envOutcome.blocks} env block(s), ${envOutcome.masked} value(s) masked in ${path}`);
+      }
+    }
+
     // File-read masking pass (optional): mask the text of tool results (files
-    // the agent read on its own) — detector always, SQL/code per their toggles
+    // the agent read on its own) — detector always, SQL/code/env per toggles
     // — also BEFORE the message-text detector swap. Shares the same store/salt.
     let fileReadSecretMock = false;
     if (fileReadMask) {

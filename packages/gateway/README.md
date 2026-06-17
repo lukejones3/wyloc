@@ -105,6 +105,20 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   Chat Completions doesn't re-emit. Reuses the entire masking engine + session
   store/salt; behind the same toggles + graceful degradation.
 
+- **Phase 9 — .env value masking** ✅ (on by default, `WYLOC_MASK_ENV`). An
+  .env is the most dangerous file an agent can read — `KEY=value` lines whose
+  VALUES are sensitive even when they match no known secret pattern. When a
+  block is confidently sniffed as an env file (multiple `KEY=value` lines, env-
+  typical comments/sections, no code), every value is masked while keys +
+  structure stay visible. Handles `export`, quoted values, `=` inside values,
+  empty values, inline comments, mixed-case keys, multiline-quoted values
+  (unterminated quotes fall back to detector-only); `=` is the only separator.
+  Works for typed/pasted content (all adapters) AND files an agent reads (the
+  file-read content-router). The detector always runs regardless, so a missed
+  env-classification still catches recognized secrets — but the sniff biases
+  toward catching env files (over-masking a non-env block is safe; missing a
+  real .env is not). Values swap+rehydrate through the shared store/salt.
+
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).
 
@@ -268,7 +282,8 @@ later becomes enterprise central policy). Nothing is hardcoded.
 | `WYLOC_SQL_DIALECT` | `postgres` | SQL dialect for the masker's parser (postgres/snowflake/bigquery/…) |
 | `WYLOC_MASK_CODE` | `false` | Mask TS/JS identifiers + internal infra + strip comments in fenced code blocks via @wyloc/code-masker (pure, no worker) |
 | `WYLOC_MASK_CODE_MEMBERS` | `false` | Also mask methods/properties of internal classes (well-typed code only) |
-| `WYLOC_MASK_FILE_READS` | `true` | Mask the content of tool results (files the agent read): detector always; SQL/code per their toggles. Structure never touched |
+| `WYLOC_MASK_FILE_READS` | `true` | Mask the content of tool results (files the agent read): detector always; SQL/code/env per their toggles. Structure never touched |
+| `WYLOC_MASK_ENV` | `true` | When content is confidently an env file, mask every KEY=value's VALUE (keys + structure kept). Applies to typed/pasted + file-read content |
 | `WYLOC_CONFIG` | `./wyloc.json` | Path to the company config file (see below) |
 | `WYLOC_VERBOSE` | `true` | Operational logging (never logs secrets) |
 

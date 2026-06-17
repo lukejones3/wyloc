@@ -33,6 +33,7 @@
 
 import { createHash } from "node:crypto";
 import { scan, buildSwap } from "@wyloc/detector";
+import { looksLikeEnv, maskEnvValues } from "./env-mask.js";
 import type { ProviderAdapter } from "./adapters/types.js";
 import type { GatewayConfig } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -104,8 +105,17 @@ export class FileReadMaskHandle {
     let masked = 0;
 
     // 1. STRUCTURAL — sniff + own toggle; adopt only if it actually masked.
+    // env first: an .env is the most dangerous file an agent reads, and its
+    // sniff is the most specific (a real .env isn't SQL or code).
     try {
-      if (this.config.maskSql && sqlReady && this.sqlMask && looksLikeSql(out)) {
+      if (this.config.maskEnv && looksLikeEnv(out)) {
+        const r = maskEnvValues(out, store.saltValue);
+        if (r.mappings.length > 0) {
+          store.addPairs(r.mappings);
+          out = r.out;
+          masked += r.mappings.length;
+        }
+      } else if (this.config.maskSql && sqlReady && this.sqlMask && looksLikeSql(out)) {
         const r = await this.sqlMask.maskRaw(out, store);
         if (r.n > 0) {
           out = r.out;

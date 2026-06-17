@@ -89,6 +89,15 @@ export interface GatewayConfig {
    * Default ON — set false to restore the prior pass-through behavior.
    */
   maskFileReads: boolean;
+  /**
+   * Mask the VALUES of every assignment in content confidently sniffed as an
+   * env file (KEY=value), keeping keys + structure visible. Catches sensitive
+   * env values that match no known secret pattern. Applies to typed/pasted
+   * content and to files an agent reads (the file-read content-router). Default
+   * ON — an .env is the most dangerous file an agent can read; over-masking a
+   * non-env block is safe (swap+rehydrate), missing a real .env is not.
+   */
+  maskEnv: boolean;
 
   // ── Derived from wyloc.json (empty unless a config file sets them) ──
   /** Bare import scopes the code-masker treats as internal (e.g. "@acme/*"). */
@@ -151,6 +160,7 @@ export function loadConfig(): GatewayConfig {
     maskCode: envBool("WYLOC_MASK_CODE", false),
     maskCodeMembers: envBool("WYLOC_MASK_CODE_MEMBERS", false),
     maskFileReads: envBool("WYLOC_MASK_FILE_READS", true),
+    maskEnv: envBool("WYLOC_MASK_ENV", true),
     internalScopes: [],
     internalDomains: [],
     internalTlds: [],

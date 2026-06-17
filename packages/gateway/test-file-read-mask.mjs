@@ -185,9 +185,11 @@ async function main() {
   {
     const o = JSON.parse(captured);
     const tr = o.messages[1].content[0];
-    assert(!captured.includes(SECRET), "C: secret in .env swapped (detector always runs on plain files)");
+    assert(!captured.includes(SECRET), "C: secret in .env swapped");
     assert(tr.content.includes("WYLOC_MOCK_"), "C: tool_result carries a mock");
-    assert(tr.content.includes("LOG_LEVEL=debug"), "C: non-secret lines preserved");
+    // env masking masks ALL values (incl. non-secret ones); keys + comment kept.
+    assert(tr.content.includes("LOG_LEVEL=") && !tr.content.includes("debug") && tr.content.includes("# config"),
+      "C: env values all masked, keys + comment preserved");
     assert(tr.type === "tool_result" && tr.tool_use_id === "toolu_c", "C: tool_result envelope intact");
   }
 
@@ -207,7 +209,7 @@ async function main() {
     const toolMsg = o.messages.find((m) => m.role === "tool");
     const asst = o.messages.find((m) => m.role === "assistant");
     assert(!captured.includes(SECRET), "D: secret in role:tool content swapped");
-    assert(toolMsg.content.includes("WYLOC_MOCK_") && toolMsg.content.includes("GREETING=hello"), "D: tool content masked, rest preserved");
+    assert(toolMsg.content.includes("WYLOC_MOCK_") && toolMsg.content.includes("GREETING=") && !toolMsg.content.includes("hello"), "D: env values all masked, keys preserved");
     assert(toolMsg.tool_call_id === "call_9", "D: tool_call_id preserved");
     assert(asst.tool_calls[0].id === "call_9" && asst.tool_calls[0].function.name === "read_file", "D: assistant tool_calls id/name intact");
     assert(asst.tool_calls[0].function.arguments === TOOL_ARGS, "D: tool_calls.function.arguments byte-intact");
