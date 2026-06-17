@@ -32,7 +32,36 @@ function configHome(): string {
 }
 const STATE_FILE = () => join(configHome(), "setup-state.json");
 
-interface ToolChange { tool: string; file: string; action: "json-env" | "backup-restore"; backup?: string; addedKeys?: string[]; }
+interface ToolChange { tool: string; file: string; format: "json" | "toml"; backup?: string; addedKeys?: string[]; }
+
+// ── TOML top-level scalar helpers (no dependency; Codex config is TOML) ───────
+// We only touch ONE top-level key (openai_base_url). Top-level keys must appear
+// BEFORE any [table] header in TOML, so we insert/replace accordingly and back
+// up the original for a verbatim revert.
+function setTomlTopLevelString(content: string, key: string, value: string): string {
+  const lines = content.split(/\r?\n/);
+  const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
+  const keyRe = new RegExp(`^\\s*${key}\\s*=`);
+  const newLine = `${key} = ${JSON.stringify(value)}`; // JSON string == valid TOML basic string
+  for (let i = 0; i < lines.length; i++) {
+    if ((firstTable === -1 || i < firstTable) && keyRe.test(lines[i]!)) {
+      lines[i] = newLine; // replace existing top-level key
+      return lines.join("\n");
+    }
+  }
+  if (firstTable === -1) {
+    const body = content.replace(/\s*$/, "");
+    return (body ? body + "\n" : "") + newLine + "\n";
+  }
+  lines.splice(firstTable, 0, newLine, ""); // insert before the first table
+  return lines.join("\n");
+}
+function removeTomlTopLevelKey(content: string, key: string): string {
+  const lines = content.split(/\r?\n/);
+  const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
+  const keyRe = new RegExp(`^\\s*${key}\\s*=`);
+  return lines.filter((l, i) => !((firstTable === -1 || i < firstTable) && keyRe.test(l))).join("\n");
+}
 interface SetupState { url: string; changes: ToolChange[]; }
 
 function readState(): SetupState | null {
@@ -63,6 +92,8 @@ interface AiTool {
   plan(url: string): string;
   /** Apply; return the ToolChange to record for revert. */
   apply(url: string): ToolChange;
+  /** Optional caveat printed during setup (e.g. partial-protection warning). */
+  note?: string;
 }
 
 /** Claude Code: settings.json `env.ANTHROPIC_BASE_URL`. Robust + shell-independent. */
@@ -83,30 +114,42 @@ const claudeCode: AiTool = {
     json.env = json.env && typeof json.env === "object" ? json.env : {};
     json.env.ANTHROPIC_BASE_URL = url;
     writeFileSync(f, JSON.stringify(json, null, 2));
-    return { tool: this.name, file: f, action: "backup-restore", ...(backup ? { backup } : { addedKeys: ["env.ANTHROPIC_BASE_URL"] }) };
+    return { tool: this.name, file: f, format: "json", ...(backup ? { backup } : { addedKeys: ["env.ANTHROPIC_BASE_URL"] }) };
   },
 };
 
-/** Codex: settings.json `env.OPENAI_BASE_URL` (Codex reads OPENAI_BASE_URL). */
+/**
+ * Codex: the CLI reads `~/.codex/config.toml`; the top-level `openai_base_url`
+ * key overrides the built-in `openai` provider's base URL (verified against the
+ * official Codex config reference). Codex does NOT read an OPENAI_BASE_URL env
+ * var, so the previous settings.json/env approach was a no-op.
+ */
 const codex: AiTool = {
   name: "Codex",
   detect() {
     return existsSync(join(homedir(), ".codex")) || onPath("codex");
   },
   plan(url) {
-    const f = join(homedir(), ".codex", "settings.json");
-    return `Codex → set env.OPENAI_BASE_URL = ${url} in ${f}`;
+    const f = join(homedir(), ".codex", "config.toml");
+    return `Codex → set openai_base_url = "${url}" in ${f}`;
   },
   apply(url) {
-    const f = join(homedir(), ".codex", "settings.json");
+    const f = join(homedir(), ".codex", "config.toml");
     mkdirSync(dirname(f), { recursive: true });
-    const backup = existsSync(f) ? backupOf(f) : undefined;
-    const json = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
-    json.env = json.env && typeof json.env === "object" ? json.env : {};
-    json.env.OPENAI_BASE_URL = url;
-    writeFileSync(f, JSON.stringify(json, null, 2));
-    return { tool: this.name, file: f, action: "backup-restore", ...(backup ? { backup } : { addedKeys: ["env.OPENAI_BASE_URL"] }) };
+    const existed = existsSync(f);
+    const backup = existed ? backupOf(f) : undefined;
+    const original = existed ? readFileSync(f, "utf8") : "";
+    writeFileSync(f, setTomlTopLevelString(original, "openai_base_url", url));
+    return { tool: this.name, file: f, format: "toml", ...(backup ? { backup } : { addedKeys: ["openai_base_url"] }) };
   },
+  // HONEST caveat — Codex's wire API is the Responses API (/v1/responses), which
+  // the gateway currently FORWARDS UNMASKED. Routing is correct, but masking is
+  // not yet in place, so don't treat Codex as protected until the gateway masks
+  // the Responses API.
+  note:
+    "Codex talks to the OpenAI Responses API (/v1/responses), which WYLOC does NOT yet mask — " +
+    "with setup applied, Codex routes through the gateway but its traffic is currently FORWARDED UNMASKED. " +
+    "Full Codex protection requires gateway Responses-API masking (not yet implemented).",
 };
 
 const TOOLS = [claudeCode, codex];
@@ -134,6 +177,11 @@ async function cmdSetup(args: string[]): Promise<void> {
   }
   console.error(`Wyloc gateway: ${GATEWAY_URL}\n\nThis will make the following changes:`);
   for (const t of detected) console.error(`  • ${t.plan(GATEWAY_URL)}`);
+  const notes = detected.filter((t) => t.note);
+  if (notes.length > 0) {
+    console.error("\n⚠  Important:");
+    for (const t of notes) console.error(`  • ${t.name}: ${t.note}`);
+  }
   console.error("");
   if (!(await confirm("Apply these changes?", assumeYes))) { console.error("Aborted. No changes made."); return; }
 
@@ -157,14 +205,24 @@ function cmdUnsetup(): void {
       if (c.backup && existsSync(c.backup)) {
         copyFileSync(c.backup, c.file); rmSync(c.backup, { force: true });
       } else if (c.addedKeys && existsSync(c.file)) {
-        // We created the file (or only added our keys) — remove just our keys.
-        const json = JSON.parse(readFileSync(c.file, "utf8"));
-        for (const k of c.addedKeys) {
-          const [outer, inner] = k.split(".");
-          if (inner && json[outer!]) delete json[outer!][inner];
-          else delete json[k];
+        // We created the file (no backup) — remove only our keys, format-aware.
+        if (c.format === "toml") {
+          let content = readFileSync(c.file, "utf8");
+          for (const k of c.addedKeys) content = removeTomlTopLevelKey(content, k);
+          if (content.trim() === "") rmSync(c.file, { force: true });
+          else writeFileSync(c.file, content);
+        } else {
+          const json = JSON.parse(readFileSync(c.file, "utf8"));
+          for (const k of c.addedKeys) {
+            const [outer, inner] = k.split(".");
+            if (inner && json[outer!]) {
+              delete json[outer!][inner];
+              if (Object.keys(json[outer!]).length === 0) delete json[outer!];
+            } else delete json[k];
+          }
+          if (Object.keys(json).length === 0) rmSync(c.file, { force: true });
+          else writeFileSync(c.file, JSON.stringify(json, null, 2));
         }
-        writeFileSync(c.file, JSON.stringify(json, null, 2));
       }
       console.error(`  ✓ reverted ${c.tool}`);
     } catch (e) {
