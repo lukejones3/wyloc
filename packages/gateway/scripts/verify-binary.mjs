@@ -12,6 +12,10 @@
  *   2. masks an AWS-shaped secret  → WYLOC_MOCK_…           (detector, pure JS)
  *   3. masks a SQL table name      → bundled Python+sqlglot  (the SQL differentiator)
  *   4. masks a raw-regex pattern   → bundled RE2             (loads at all = works, else fail-closed)
+ *   5. masks Go + COBOL code       → bundled runtime/wasm grammars (poly-masker;
+ *      COBOL also proves the SEA path needs NO --liftoff-only re-exec: the
+ *      pinned Node 22 is unaffected by the V8 tier-up OOM, and isSea() must
+ *      suppress the re-exec — a hang or crash here would catch a misfire)
  *
  * Exit non-zero (loudly) if ANY of these fail — that is the per-platform proof
  * that the differentiator ships working with zero machine prerequisites. It is
@@ -77,6 +81,8 @@ async function main() {
   writeFileSync(cfg, JSON.stringify({
     version: 1,
     patterns: [{ name: "Ticket", match: { type: "regex", advanced: true, source: "TKT-\\d{4}" }, examples: { match: ["TKT-1234"] } }],
+    languages: ["go", "cobol"],
+    internalPackagePrefixes: { go: ["github.com/voltra/billing-core"] },
   }));
 
   // Fake upstream (runs under the runner's Node; the BINARY is what's clean).
@@ -130,6 +136,24 @@ async function main() {
   ok("SQL table masked (bundled Python+sqlglot)", captured !== null && !captured.includes(TABLE), "SQL masking did NOT work out-of-box");
   ok("raw-regex pattern masked (bundled RE2)", captured !== null && !captured.includes(TICKET), "RE2 raw-regex did NOT work out-of-box");
   ok("mock placeholders present", captured !== null && captured.includes("WYLOC_MOCK_"));
+
+  // 5. Poly masking from bundled wasm grammars — Go (fenced) and COBOL
+  //    (fenced; also proves the SEA re-exec guard did NOT misfire: the binary
+  //    must keep serving with cobol enabled, no child spawn, no V8 OOM).
+  ok("re-exec correctly suppressed inside SEA", !/re-executing with --liftoff-only/.test(stderr), lastLines(stderr));
+  if (up) {
+    captured = null;
+    const GO = "package billing\n\nimport (\n\t\"fmt\"\n\n\t\"github.com/voltra/billing-core/internal/ledger\"\n)\n\nfunc ReconcileBatch(c *ledger.Client) {\n\tfmt.Println(c != nil)\n}\n";
+    const CBL = "000100 IDENTIFICATION DIVISION.\n000200 PROGRAM-ID. VBILLRECON.\n000300 DATA DIVISION.\n000400 WORKING-STORAGE SECTION.\n000500 01  WS-MATCHED-CNT PIC 9(6) VALUE ZERO.\n000600 PROCEDURE DIVISION.\n000700 MAIN-PARA.\n000800     ADD 1 TO WS-MATCHED-CNT\n000900     STOP RUN.\n";
+    await fetch(`http://127.0.0.1:${GW_PORT}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": "sk-FAKE", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "x", max_tokens: 16, messages: [{ role: "user", content: "review:\n```go\n" + GO + "```\nand:\n```cobol\n" + CBL + "```" }] }),
+    }).catch(() => {});
+    await sleep(1500);
+  }
+  ok("Go masked from bundled wasm (poly grammars ship)", captured !== null && !captured.includes("ReconcileBatch") && !captured.includes("voltra/billing-core") && captured.includes("fmt"), lastLines(stderr));
+  ok("COBOL masked from bundled wasm (SEA, no flags, no OOM)", captured !== null && !/VBILLRECON|WS-MATCHED-CNT/.test(captured) && /DIVISION/.test(captured), lastLines(stderr));
 
   gw.kill("SIGTERM"); upstream.close();
   await sleep(200);

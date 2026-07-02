@@ -12,6 +12,7 @@
  * every language the gateway handles.
  */
 export { PolyMasker, PolyMaskError, IMPLEMENTED_LANGUAGES, type MaskResult } from "./engine.js";
+export { setGrammarDir } from "./parsers.js";
 export { resolveConfig, type PolyMaskerConfig, type PolyMaskerConfigInput } from "./config.js";
 export { discoverInternalPrefixes } from "./discover.js";
 export { ProjectIndex } from "./project-index.js";

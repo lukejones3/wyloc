@@ -7,7 +7,9 @@
  * `claude` session at.
  */
 
-import { loadConfig } from "./config.js";
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { loadConfig, type GatewayConfig } from "./config.js";
 import { Logger } from "./logger.js";
 import { createGateway } from "./server.js";
 import { WylocConfigError } from "./wyloc/index.js";
@@ -42,6 +44,15 @@ async function main(): Promise<void> {
     throw err;
   }
 
+  // COBOL's 9.5MB grammar module fatally OOMs V8's OPTIMIZING wasm compiler
+  // on newer Nodes (≥23, turboshaft) — a background thread kills the process
+  // after parses already succeeded. Baseline-only compilation (--liftoff-only)
+  // is proven safe, but V8 flags only take effect at process start, so when
+  // COBOL is enabled under plain `node` we re-exec ourselves ONCE with the
+  // flag. The packaged SEA binary skips this: it pins Node 22 (unaffected),
+  // and an SEA binary cannot consume node/V8 flags anyway.
+  if (maybeReexecForCobol(config)) return;
+
   const log = Logger.from(config);
   const server = createGateway(config);
 
@@ -74,6 +85,38 @@ async function main(): Promise<void> {
       setTimeout(() => process.exit(0), 500).unref();
     });
   }
+}
+
+/**
+ * Re-exec `node --liftoff-only <same script + args>` when COBOL masking is on
+ * and the flag isn't set yet. Returns true when a child was spawned (the
+ * caller must NOT continue starting the gateway). No-ops inside the SEA
+ * binary (Node 22 pin is safe; SEA can't take node flags) and when already
+ * flagged (the child's own pass through this function).
+ */
+function maybeReexecForCobol(config: GatewayConfig): boolean {
+  if (!config.maskLanguages.includes("cobol")) return false;
+  if (process.execArgv.includes("--liftoff-only")) return false;
+  try {
+    // node:sea exists on Node ≥21.7; on older Nodes assume non-SEA.
+    // (createRequire works in both the ESM source and the CJS SEA bundle,
+    // whose import.meta.url is shimmed to the binary path.)
+    const sea = createRequire(import.meta.url)("node:sea") as { isSea?: () => boolean };
+    if (sea.isSea?.()) return false;
+  } catch {
+    /* pre-SEA node — plain-node path below is correct */
+  }
+  console.error("[wyloc] COBOL masking enabled — re-executing with --liftoff-only (V8 wasm baseline tier)");
+  const child = spawn(
+    process.execPath,
+    ["--liftoff-only", ...process.execArgv, ...process.argv.slice(1)],
+    { stdio: "inherit" },
+  );
+  child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 0)));
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.on(sig, () => child.kill(sig));
+  }
+  return true;
 }
 
 // Dispatch: a CLI subcommand (setup/unsetup/service/status/help) is handled by

@@ -14,6 +14,7 @@ import { APP_JAVA, EXTERNAL_ONLY_JAVA, WILDCARD_IMPORT_JAVA, JAVA_PREFIXES } fro
 import { APP_CSHARP, SIBLING_CS, EXTERNAL_ONLY_CSHARP, CSHARP_PREFIXES } from "./fixtures/csharp.js";
 import { APP_KOTLIN, EXTERNAL_ONLY_KOTLIN, KOTLIN_PREFIXES } from "./fixtures/kotlin.js";
 import { APP_PY, EXTERNAL_ONLY_PY, PYTHON_PREFIXES } from "./fixtures/python.js";
+import { APP_COBOL, VLEDGREC_CPY, EXTERNAL_ONLY_COBOL, FREE_FORMAT_COBOL, OVERFLOW_COBOL } from "./fixtures/cobol.js";
 
 let passed = 0;
 let failed = 0;
@@ -687,6 +688,173 @@ async function main(): Promise<void> {
     }
     check(`${g} public URL untouched`, r.masked.includes("https://httpbin.org/post"));
     check(`${g} output re-parses clean`, (await pyParseErrors(r.masked)) === 0);
+  }
+
+  // ====================================================================
+  // PHASE 2 — MASKING (COBOL)
+  // ====================================================================
+  console.log("══ Phase 2: masking (cobol) ══════════════════════════════");
+  const cobolMasker = () => PolyMasker.create({ languages: ["cobol"] });
+  const cobolParseErrors = async (code: string) => {
+    const parser = await parserFor("cobol");
+    const tree = parser.parse(code);
+    return tree ? countParseErrors(tree.rootNode) : Infinity;
+  };
+  const cobolWord = (hay: string, w: string) =>
+    new RegExp(`(?<![A-Z0-9-])${w}(?![A-Z0-9-])`).test(hay);
+
+  // ---- Primary fixture: APP_COBOL (fixed format — column safety) ----
+  {
+    const r = await cobolMasker().mask(APP_COBOL, "cobol");
+    const m = r.masked;
+    const g = "[cobol/app]";
+    const kindOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.kind;
+    const maskOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.mask;
+
+    // (a) classification
+    check(`${g} PROGRAM-ID -> namespace`, kindOf("VBILLRECON") === "namespace");
+    check(`${g} data items -> type`, kindOf("WS-MATCHED-CNT") === "type" && kindOf("WS-LEDGER-URL") === "type");
+    check(`${g} paragraph -> function`, kindOf("MAIN-PARA") === "function" && kindOf("RECONCILE-BATCH") === "function");
+    check(`${g} section -> function`, kindOf("MAIN-CONTROL") === "function");
+    check(`${g} COPY member -> import`, kindOf("VLEDGREC") === "import");
+
+    // (b) SAME-LENGTH masks: valid COBOL words, exact length, never reserved
+    for (const { real, mask } of r.maskedIdentifiers) {
+      check(`${g} mask for ${real} same-length + valid word`,
+        mask.length === real.length && /^M[A-Z0-9]*$/.test(mask), `got ${mask}`);
+    }
+
+    // (c) FIXED-FORMAT COLUMN SAFETY — the make-or-break: after filtering
+    // comment lines out of the input, every line whose edits were
+    // identifier-only keeps its EXACT length and its first 7 columns.
+    const inLines = APP_COBOL.split("\n").filter((l) => !(l.length > 6 && (l[6] === "*" || l[6] === "/")));
+    const outLines = m.split("\n");
+    check(`${g} line count preserved (comments removed)`, outLines.length === inLines.length,
+      `${outLines.length} vs ${inLines.length}`);
+    let lenOk = true, colOk = true;
+    for (let i = 0; i < Math.min(inLines.length, outLines.length); i++) {
+      // string/secret masks and stripped inline *> comments legitimately
+      // change a line's length; identifier renames never may.
+      const lengthChanging = /WYLOC_MOCK_|host-[a-z0-9]/.test(outLines[i] ?? "") || inLines[i]!.includes("*>");
+      if (!lengthChanging && outLines[i]!.length !== inLines[i]!.length) lenOk = false;
+      if (outLines[i]!.slice(0, 7) !== inLines[i]!.slice(0, 7)) colOk = false;
+    }
+    check(`${g} identifier-only lines byte-length-identical`, lenOk);
+    check(`${g} sequence area + indicator columns preserved`, colOk);
+    check(`${g} no identifier-only line crosses col 72`,
+      outLines.every((l) => /WYLOC_MOCK_|host-[a-z0-9]/.test(l) || l.length <= 72));
+
+    // (d) internal identity gone, consistently
+    for (const real of ["VBILLRECON", "WS-MATCHED-CNT", "WS-LEDGER-URL", "WS-BATCH-TOTALS", "MAIN-PARA", "RECONCILE-BATCH", "VLEDGREC"]) {
+      check(`${g} "${real}" absent`, !cobolWord(m, real));
+    }
+    check(`${g} WS-MATCHED-CNT consistently renamed (4 refs)`,
+      wordCount(m, maskOf("WS-MATCHED-CNT")!) === 4, `got ${wordCount(m, maskOf("WS-MATCHED-CNT")!)}`);
+    check(`${g} RECONCILE-BATCH consistently renamed (2 refs)`,
+      wordCount(m, maskOf("RECONCILE-BATCH")!) === 2);
+    check(`${g} COPY line still copy-shaped`, /COPY M[A-Z0-9]+\./.test(m));
+
+    // (e) NEVER-touch: verbs / figurative constants / intrinsics (make-or-break)
+    for (const ext of ["PERFORM", "DISPLAY", "MOVE", "ADD", "COMPUTE", "ZERO", "FUNCTION", "NUMVAL", "GREATER", "END-IF", "PIC", "VALUE", "STOP"]) {
+      check(`${g} reserved "${ext}" still present`, cobolWord(m, ext));
+      check(`${g} reserved "${ext}" never in session`, r.maskedIdentifiers.every((x) => x.real.toUpperCase() !== ext));
+    }
+
+    // (f) copybook-sourced name on the SNIPPET path: left alone (safe under-mask)
+    check(`${g} VL-RATE-RAW (copybook, no index) left alone`, cobolWord(m, "VL-RATE-RAW"));
+
+    // (g) strings / secret / comments
+    check(`${g} internal host masked`, !m.includes("ledger.internal.voltra.io"));
+    check(`${g} AWS key swapped`, !m.includes("AKIA5XQ2WJ8NPLR3MKVT"));
+    check(`${g} col-7 comment lines gone`, !m.includes("PROPRIETARY") && !m.includes("PAYMENTS-CORE"));
+    check(`${g} inline *> comment stripped, statement kept`, !m.includes("per settlement batch") && /PERFORM M[A-Z0-9]+\s*$/m.test(m));
+
+    // (h) validity + determinism + idempotency
+    check(`${g} output re-parses clean`, (await cobolParseErrors(m)) === 0);
+    check(`${g} deterministic`, (await cobolMasker().mask(APP_COBOL, "cobol")).masked === m);
+    const r3 = await cobolMasker().mask(m, "cobol");
+    for (const { mock } of r.swappedSecrets) {
+      check(`${g} idempotent: ${mock.slice(0, 22)}… survives`, r3.masked.includes(mock));
+    }
+    check(`${g} idempotent: no new secret swap`, r3.swappedSecrets.length === 0);
+
+    // (i) rehydration round-trip incl. invented identifiers
+    const cnt = maskOf("WS-MATCHED-CNT")!;
+    const para = maskOf("RECONCILE-BATCH")!;
+    const reply = `Add a new paragraph AUDIT-PARA after ${para}; move ${cnt} into a group item.`;
+    const out = rehydrate(reply, r.session);
+    check(`${g} masks reversed`, out.includes("after RECONCILE-BATCH") && out.includes("move WS-MATCHED-CNT"));
+    check(`${g} invented name passes through`, out.includes("AUDIT-PARA"));
+    const round = rehydrate(m, r.session);
+    for (const real of ["VBILLRECON", "WS-MATCHED-CNT", "COPY VLEDGREC", "ledger.internal.voltra.io", "AKIA5XQ2WJ8NPLR3MKVT"]) {
+      check(`${g} round-trip restores ${real}`, round.includes(real));
+    }
+  }
+
+  // ---- FILE-READ PATH: copybook via the project index ----
+  {
+    const g = "[cobol/copybook-indexed]";
+    const dir = mkdtempSync(join(tmpdir(), "wyloc-cbl-"));
+    try {
+      writeFileSync(join(dir, "VLEDGREC.cpy"), VLEDGREC_CPY);
+      const index = new ProjectIndex(dir);
+      const types = await index.internalTypes("cobol", []);
+      check(`${g} copybook data items indexed`,
+        ["VL-ENTRY", "VL-ENTRY-ID", "VL-CURRENCY", "VL-AMT-MINOR", "VL-RATE-RAW"].every((n) => types.has(n)),
+        `indexed: ${[...types].join(", ")}`);
+      const r = await cobolMasker().mask(APP_COBOL, "cobol", types);
+      check(`${g} VL-RATE-RAW now masked`, !cobolWord(r.masked, "VL-RATE-RAW"));
+      const target = r.maskedIdentifiers.find((x) => x.real === "VL-RATE-RAW")!;
+      check(`${g} same-length mask for copybook item`, target.mask.length === "VL-RATE-RAW".length);
+      check(`${g} output re-parses clean`, (await cobolParseErrors(r.masked)) === 0);
+      check(`${g} round-trip restores VL-RATE-RAW`, rehydrate(r.masked, r.session).includes("VL-RATE-RAW"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // ---- NEGATIVE fixture: EXTERNAL_ONLY_COBOL ----
+  {
+    const r = await cobolMasker().mask(EXTERNAL_ONLY_COBOL, "cobol");
+    const g = "[cobol/external-only]";
+    const maskedReals = r.maskedIdentifiers.map((x) => x.real).sort();
+    // Only the program's OWN identity (program-id + its one paragraph).
+    check(`${g} only own identity masked`, maskedReals.join(",") === "MAINPROG,ONLY-PARA",
+      `masked: ${maskedReals.join(", ")}`);
+    check(`${g} zero strings masked`, r.maskedStrings.length === 0);
+    check(`${g} zero secrets`, r.swappedSecrets.length === 0);
+    for (const ext of ["DISPLAY", "FUNCTION", "CURRENT-DATE", "UPPER-CASE", "STOP", "RUN"]) {
+      check(`${g} "${ext}" untouched`, cobolWord(r.masked, ext));
+    }
+    check(`${g} output re-parses clean`, (await cobolParseErrors(r.masked)) === 0);
+  }
+
+  // ---- Column-72 OVERFLOW: documented, contained behavior ----
+  {
+    const g = "[cobol/col72-overflow]";
+    const r = await cobolMasker().mask(OVERFLOW_COBOL, "cobol");
+    check(`${g} mask still succeeds (identifier rewrite gate is pre-detector)`, r.masked.length > 0);
+    check(`${g} secret swapped despite overflow`, !r.masked.includes("AKIA5XQ2WJ8NPLR3MKVT") && r.masked.includes("WYLOC_MOCK_"));
+    const overLines = r.masked.split("\n").filter((l) => l.length > 72);
+    check(`${g} exactly the mock line crosses col 72`, overLines.length === 1 && overLines[0]!.includes("WYLOC_MOCK_"));
+    // the error island is contained: identifiers everywhere else still masked
+    check(`${g} program identity still masked`, !cobolWord(r.masked, "VOVERFLOW") && !cobolWord(r.masked, "WS-SECRET-KEY-FLD"));
+    check(`${g} round-trip restores the original line`, rehydrate(r.masked, r.session).includes('VALUE "AKIA5XQ2WJ8NPLR3MKVT"'));
+  }
+
+  // ---- FREE-FORMAT source: grammar limitation, degrades safely ----
+  // The COBOL85 grammar expects fixed/area-formatted source; true column-1
+  // free format fails the input parse gate → detector-only fallback (the
+  // caller keeps the text unchanged and secrets still get scrubbed there).
+  {
+    const g = "[cobol/free-format]";
+    let threw = false;
+    try {
+      await cobolMasker().mask(FREE_FORMAT_COBOL, "cobol");
+    } catch (e) {
+      threw = e instanceof PolyMaskError;
+    }
+    check(`${g} column-1 free format degrades via PolyMaskError (documented)`, threw);
   }
 
   // ====================================================================

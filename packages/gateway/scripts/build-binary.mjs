@@ -202,6 +202,26 @@ async function main() {
     fail("re2 prebuilt not present after install (no prebuilt for this platform/ABI?)");
   cpSync(re2src, join(out, "runtime", "re2"), { recursive: true });
 
+  // ── 6b. Bundled runtime: tree-sitter wasm grammars (poly-masker) ──────────────
+  // The SEA bundle has no node_modules, so the web-tree-sitter core wasm and
+  // one grammar per supported language ship next to the binary; the gateway
+  // points the poly-masker at this directory (runtime.ts bundledWasmDir).
+  step("runtime/wasm (web-tree-sitter core + poly grammars)");
+  const wasmOut = join(out, "runtime", "wasm");
+  mkdirSync(wasmOut, { recursive: true });
+  const tsWasms = join(REPO, "node_modules", "tree-sitter-wasms", "out");
+  for (const g of ["go", "java", "c_sharp", "kotlin", "python"]) {
+    cpSync(join(tsWasms, `tree-sitter-${g}.wasm`), join(wasmOut, `tree-sitter-${g}.wasm`));
+  }
+  cpSync(
+    join(REPO, "node_modules", "@unit-mesh", "treesitter-artifacts", "wasm", "tree-sitter-COBOL.wasm"),
+    join(wasmOut, "tree-sitter-COBOL.wasm"),
+  );
+  const wtsDir = join(REPO, "node_modules", "web-tree-sitter");
+  const coreWasm = firstExisting(join(wtsDir, "web-tree-sitter.wasm"), join(wtsDir, "tree-sitter.wasm"));
+  if (!coreWasm) fail("web-tree-sitter core wasm not found in node_modules");
+  cpSync(coreWasm, join(wasmOut, coreWasm.split(/[\\/]/).pop()));
+
   // ── 7. Bundled runtime: relocatable Python + sqlglot ─────────────────────────
   step("runtime/python (python-build-standalone + sqlglot)");
   const pyArchive = join(CACHE, `python-${platform}.tar.gz`);

@@ -238,6 +238,38 @@ const pythonFileReadRequest = {
   stream: true,
 };
 
+const COBOL_FILE = [
+  "000100 IDENTIFICATION DIVISION.",
+  "000200 PROGRAM-ID. VBILLRECON.",
+  "000300* VOLTRA BILLING RECONCILIATION. PROPRIETARY.",
+  "000400 DATA DIVISION.",
+  "000500 WORKING-STORAGE SECTION.",
+  "000600 01  WS-MATCHED-CNT PIC 9(6) VALUE ZERO.",
+  '000700 01  WS-KEY PIC X(20) VALUE "AKIA5XQ2WJ8NPLR3MKVT".',
+  "000800 PROCEDURE DIVISION.",
+  "000900 MAIN-PARA.",
+  "001000     ADD 1 TO WS-MATCHED-CNT",
+  '001100     DISPLAY "MATCHED: " WS-MATCHED-CNT',
+  "001200     STOP RUN.",
+].join("\n");
+
+const cobolFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the cobol reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_6", name: "Read", input: { path: "VBILLRECON.cbl" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_6", content: [{ type: "text", text: COBOL_FILE }] }],
+    },
+  ],
+  stream: true,
+};
+
 const fencedRequest = {
   model: "claude-opus-4-8",
   max_tokens: 64,
@@ -373,7 +405,7 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go", "java", "csharp", "kotlin", "python"],
+      languages: ["go", "java", "csharp", "kotlin", "python", "cobol"],
       internalPackagePrefixes: {
         go: ["github.com/voltra/billing-core"],
         java: ["com.voltra."],
@@ -468,6 +500,22 @@ async function main() {
   assert(!pyText.includes("post each entry"), "[python] # comment stripped");
   assert(pyText.includes("import logging") && /\brequests\b/.test(pyText), "[python] stdlib + pip preserved");
   assert(/\bledger_client\b/.test(pyText) && /\breconcile\b/.test(pyText), "[python] attributes/methods untouched (dynamic typing)");
+
+  console.error("\n── Poly-masking (COBOL): fixed format + re-exec ─────");
+  // The gateway (spawned under the dev Node via tsx) must have re-exec'd
+  // itself with --liftoff-only because cobol is enabled — a crash here would
+  // mean the V8 OOM guard failed.
+  captured = null;
+  await post(cobolFileReadRequest);
+  assert(captured !== null, "[cobol] upstream received the request (gateway survived, re-exec OK)");
+  const cblText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\bVBILLRECON\b/.test(cblText), "[cobol] PROGRAM-ID masked out");
+  assert(!/(?<![A-Z0-9-])WS-MATCHED-CNT(?![A-Z0-9-])/.test(cblText), "[cobol] data item masked out");
+  assert(!cblText.includes("PROPRIETARY"), "[cobol] comment line stripped");
+  assert(!cblText.includes("AKIA5XQ2WJ8NPLR3MKVT"), "[cobol] AWS key swapped");
+  assert(/\bPERFORM\b|\bDISPLAY\b/.test(cblText) && /\bADD\b/.test(cblText), "[cobol] verbs untouched");
+  const cblLines = cblText.split("\n");
+  assert(cblLines.every((l) => l.includes("WYLOC_MOCK_") || l.length <= 72), "[cobol] column alignment: no identifier line crosses col 72");
 
   gateway.kill("SIGTERM");
   upstream.close();

@@ -57,6 +57,17 @@ export function bundledRe2Dir(): string | null {
   return existsSync(join(p, "package.json")) ? p : null;
 }
 
+/**
+ * Path to the bundled tree-sitter wasm directory (web-tree-sitter core wasm +
+ * one grammar per supported language), or null. The poly-masker resolves
+ * grammars from node_modules in dev; the SEA binary has no node_modules, so
+ * the gateway points it here instead.
+ */
+export function bundledWasmDir(): string | null {
+  const p = join(runtimeDir(), "wasm");
+  return existsSync(p) ? p : null;
+}
+
 /** True when a bundled runtime directory is present next to the binary. */
 export function hasBundledRuntime(): boolean {
   return existsSync(runtimeDir());

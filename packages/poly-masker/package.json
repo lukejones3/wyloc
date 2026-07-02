@@ -15,6 +15,7 @@
   },
   "files": ["dist"],
   "dependencies": {
+    "@unit-mesh/treesitter-artifacts": "1.7.7",
     "@wyloc/code-masker": "*",
     "@wyloc/detector": "*",
     "tree-sitter-wasms": "0.1.13",
@@ -23,7 +24,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/run.ts",
+    "test": "node --liftoff-only --import tsx test/run.ts",
     "test:watch": "tsx --watch test/run.ts"
   },
   "devDependencies": {
