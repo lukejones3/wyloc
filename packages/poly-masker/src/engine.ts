@@ -48,6 +48,23 @@ const ANALYZERS: Partial<Record<LanguageId, Analyzer>> = {
 /** Languages with an implemented analyzer (config may enable fewer). */
 export const IMPLEMENTED_LANGUAGES = Object.keys(ANALYZERS) as LanguageId[];
 
+/**
+ * Languages that are OPT-IN (off unless a deployment names them). COBOL: the
+ * grammar is 9.5MB, needs the gateway's --liftoff-only dev-mode re-exec, and
+ * has wide dialect variance — a company turns it on deliberately.
+ */
+export const OPT_IN_LANGUAGES: readonly LanguageId[] = ["cobol"];
+
+/**
+ * The default-ON set: every implemented language except the opt-in ones. A
+ * deployment that configures nothing still masks these common languages
+ * ("protect the common languages unless narrowed"); a company can narrow the
+ * list to just what it uses (leaner grammar loading) or add an opt-in one.
+ */
+export const DEFAULT_LANGUAGES: LanguageId[] = IMPLEMENTED_LANGUAGES.filter(
+  (l) => !OPT_IN_LANGUAGES.includes(l),
+);
+
 /** Identifier-mask prefixes — same vocabulary as @wyloc/code-masker's mask.ts. */
 const ID_PREFIX: Record<IdentifierKind, string> = {
   class: "Class",

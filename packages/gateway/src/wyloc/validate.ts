@@ -21,6 +21,8 @@ const KNOWN_FORMATS = ["ipv4", "email", "uuid", "mac", "us_phone", "iban"];
 const MATCH_TYPES = ["prefix", "context", "list", "known", "regex"];
 const LOG_GRANULARITY = ["aggregate", "per_incident"];
 const LOG_CATEGORIES = ["secrets", "pii", "custom", "code", "sql"];
+/** Expansion keywords accepted in `languages` (see config.resolveMaskLanguages). */
+const LANGUAGE_KEYWORDS = ["defaults", "default", "all", "none", "off"];
 const MAX_FORMAT_LEN = 4096;
 const MAX_CONTEXT_WINDOW = 256;
 
@@ -153,10 +155,14 @@ export function validateStructure(raw: unknown): { config: WylocConfig | null; e
   if ("languages" in raw) {
     if (!isStringArray(raw.languages)) errors.push(`wyloc.json.languages: must be an array of strings`);
     else {
+      // Accept language ids AND the expansion keywords ("defaults" = the
+      // common set, "all" = incl. COBOL, "none"/"off" = disable). This lets a
+      // company add COBOL without re-listing everything: ["defaults","cobol"].
+      const accepted = [...POLY_LANGUAGES, ...LANGUAGE_KEYWORDS];
       for (const lang of raw.languages) {
-        if (!(POLY_LANGUAGES as readonly string[]).includes(lang)) {
-          const hint = closest(lang, POLY_LANGUAGES);
-          errors.push(`wyloc.json.languages: unknown language ${JSON.stringify(lang)}${hint ? ` (did you mean ${JSON.stringify(hint)}?)` : ""} — supported: ${POLY_LANGUAGES.join(", ")} (TS/JS via policy.code)`);
+        if (!accepted.includes(lang.toLowerCase())) {
+          const hint = closest(lang, accepted);
+          errors.push(`wyloc.json.languages: unknown language ${JSON.stringify(lang)}${hint ? ` (did you mean ${JSON.stringify(hint)}?)` : ""} — supported: ${POLY_LANGUAGES.join(", ")} or a keyword (${LANGUAGE_KEYWORDS.join(", ")}); TS/JS via policy.code`);
         }
       }
     }

@@ -73,9 +73,15 @@ export interface WylocConfig {
   /** Literal proprietary terms masked everywhere. */
   blocklist?: string[];
   /**
-   * Languages the poly-masker masks (Go/Java/C#/Kotlin/Python). A company
-   * lists only the languages it uses; each grammar loads lazily. TS/JS are
-   * governed by policy.code, not this list.
+   * Languages the poly-masker masks (go, java, csharp, kotlin, python, rust,
+   * c, cpp, cobol). Each grammar loads lazily. OMIT this key for the sensible
+   * DEFAULT — the common-language set (every language above except cobol).
+   * When present it is AUTHORITATIVE (replaces the default), so a company can:
+   *   • narrow to what it uses (leaner loading):  ["go", "python"]
+   *   • add an opt-in language without re-listing:  ["defaults", "cobol"]
+   *   • mask everything (incl. cobol):              ["all"]
+   *   • disable poly masking:                       ["none"]
+   * TS/JS are governed by policy.code, not this list.
    */
   languages?: string[];
   /**

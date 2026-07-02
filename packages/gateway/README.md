@@ -286,11 +286,12 @@ later becomes enterprise central policy). Nothing is hardcoded.
 | `WYLOC_OPENAI_UPSTREAM_BASE_URL` | `https://api.openai.com` | OpenAI upstream origin (`/v1/chat/completions`) |
 | `WYLOC_ON_DETECT` | `swap` | `swap` (replace + forward) or `block` (reject) |
 | `WYLOC_INJECT_SYSTEM_PROMPT` | `true` | Inject the verbatim-echo `system` directive |
-| `WYLOC_MASK_SQL` | `false` | Mask SQL identifiers + scrub literals via @wyloc/sql-masker (needs Python3 + sqlglot) |
+| `WYLOC_MASK_SQL` | `true` | Mask SQL identifiers + scrub literals via @wyloc/sql-masker (bundled Python+sqlglot in the binary; from source needs Python3+sqlglot, else degrades to detector-only) |
 | `WYLOC_SQL_DIALECT` | `postgres` | SQL dialect for the masker's parser (postgres/snowflake/bigquery/…) |
-| `WYLOC_MASK_CODE` | `false` | Mask TS/JS identifiers + internal infra + strip comments in fenced code blocks via @wyloc/code-masker (pure, no worker) |
+| `WYLOC_MASK_CODE` | `true` | Mask TS/JS identifiers + internal infra + strip comments in fenced code blocks via @wyloc/code-masker (pure, no worker) |
 | `WYLOC_MASK_CODE_MEMBERS` | `false` | Also mask methods/properties of internal classes (well-typed code only) |
-| `WYLOC_MASK_FILE_READS` | `true` | Mask the content of tool results (files the agent read): detector always; SQL/code/env per their toggles. Structure never touched |
+| `WYLOC_MASK_LANGUAGES` | `defaults` | Poly-masker languages: the common set `go,java,csharp,kotlin,python,rust,c,cpp` (COBOL opt-in). Narrow to a subset, or use keywords `defaults` / `all` (incl. cobol) / `none`. See below |
+| `WYLOC_MASK_FILE_READS` | `true` | Mask the content of tool results (files the agent read): detector always; SQL/code/poly/env per their toggles. Structure never touched |
 | `WYLOC_MASK_ENV` | `true` | When content is confidently an env file, mask every KEY=value's VALUE (keys + structure kept). Applies to typed/pasted + file-read content |
 | `WYLOC_CONFIG` | `./wyloc.json` | Path to the company config file (see below) |
 | `WYLOC_VERBOSE` | `true` | Operational logging (never logs secrets) |
@@ -319,6 +320,20 @@ It controls:
 - **`internalScopes`** — bare import scopes (`@acme/*`) the code-masker treats as internal.
 - **`internalDomains` / `internalHosts` / `internalTlds`** — internal infra masked in strings/URLs.
 - **`blocklist`** — proprietary terms masked everywhere.
+- **`languages`** — which poly-masker languages are on. **Omit for the sensible
+  default:** the common set `go java csharp kotlin python rust c cpp` — every
+  deployment protects them without configuration (COBOL is opt-in: 9.5 MB
+  grammar, dialect variance). When present it is **authoritative** (replaces the
+  default), so a company can **narrow** to what it uses (`["go","python"]` —
+  leaner grammar loading), **add** an opt-in language without re-listing
+  (`["defaults","cobol"]`), enable **everything** (`["all"]`), or **disable**
+  poly masking (`["none"]`). Unknown ids/keywords fail closed with a *did you
+  mean* hint.
+- **`internalPackagePrefixes`** — the internal-vs-external signal per language
+  (go module paths, java/kotlin/c# namespaces, python/rust top-level packages,
+  c++ namespaces). **Auto-discovered** from `go.mod` / `pom.xml` /
+  `build.gradle[.kts]` / `*.csproj` / `pyproject.toml` / `Cargo.toml` when the
+  gateway runs beside the repo; config values **merge** on top.
 - **`policy`** — masking category toggles (`sql`, `code`, `fileReads`, `members`, `pii`).
 - **`logging`** — per-category granularity (metadata-only is enforced regardless).
 

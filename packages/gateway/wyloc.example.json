@@ -31,6 +31,18 @@
 
   "blocklist": ["Project Stargate", "Atlas Initiative", "Skunkworks-7"],
 
+  "languages": ["defaults"],
+
+  "internalPackagePrefixes": {
+    "go": ["github.com/acme/billing"],
+    "java": ["com.acme."],
+    "kotlin": ["com.acme."],
+    "csharp": ["Acme."],
+    "python": ["acme_billing"],
+    "rust": ["acme_billing"],
+    "cpp": ["acme"]
+  },
+
   "policy": {
     "sql": true,
     "code": true,

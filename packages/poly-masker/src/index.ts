@@ -1,6 +1,6 @@
 /**
  * @wyloc/poly-masker — tree-sitter-based, semantic-preserving identifier
- * masking for Go / Java / C# / Kotlin / Python.
+ * masking for Go / Java / C# / Kotlin / Python / Rust / C / C++ / COBOL.
  *
  * The multi-language sibling of @wyloc/code-masker (TS/JS keeps the TypeScript
  * Compiler API): mask proprietary identity (internal types/functions/packages,
@@ -11,7 +11,14 @@
  * are shared with the TS masker so masks look and reverse identically across
  * every language the gateway handles.
  */
-export { PolyMasker, PolyMaskError, IMPLEMENTED_LANGUAGES, type MaskResult } from "./engine.js";
+export {
+  PolyMasker,
+  PolyMaskError,
+  IMPLEMENTED_LANGUAGES,
+  DEFAULT_LANGUAGES,
+  OPT_IN_LANGUAGES,
+  type MaskResult,
+} from "./engine.js";
 export { setGrammarDir } from "./parsers.js";
 export { resolveConfig, type PolyMaskerConfig, type PolyMaskerConfigInput } from "./config.js";
 export { discoverInternalPrefixes } from "./discover.js";

@@ -165,5 +165,68 @@ console.error("\n── precedence (config > env) ──────────
   ok("missing file -> null (env-only behavior)", loaded === null);
 }
 
+// ── 9. Sensible DEFAULTS: common languages ON, COBOL opt-in, TS/JS+SQL ON ──
+console.error("\n── sensible defaults ─────────────────────────────");
+{
+  // A pristine env (no WYLOC_MASK_* set) must give baseline coverage.
+  const clean = { ...process.env };
+  for (const k of Object.keys(clean)) if (k.startsWith("WYLOC_MASK")) delete process.env[k];
+  const c = loadConfig();
+  process.env = clean; // restore
+  const COMMON = ["go", "java", "csharp", "kotlin", "python", "rust", "c", "cpp"];
+  ok("default masks the 8 common languages", COMMON.every((l) => c.maskLanguages.includes(l)),
+    c.maskLanguages.join(","));
+  ok("default does NOT include COBOL (opt-in)", !c.maskLanguages.includes("cobol"));
+  ok("default TS/JS masking ON", c.maskCode === true);
+  ok("default SQL masking ON", c.maskSql === true);
+  ok("default file-read masking ON", c.maskFileReads === true);
+}
+
+// ── 10. `languages` keyword expansion + narrowing, via wyloc.json ──────
+console.error("\n── languages keyword expansion ───────────────────");
+{
+  const base = { ...loadConfig() };
+  const narrow = applyWyloc(base, tryLoad({ version: 1, languages: ["go", "python"] }).loaded);
+  ok("narrow list is authoritative", narrow.maskLanguages.join(",") === "go,python");
+
+  const addCobol = applyWyloc(base, tryLoad({ version: 1, languages: ["defaults", "cobol"] }).loaded);
+  ok("[defaults,cobol] expands to common set + COBOL",
+    addCobol.maskLanguages.includes("cobol") && addCobol.maskLanguages.includes("go") && addCobol.maskLanguages.length === 9,
+    addCobol.maskLanguages.join(","));
+
+  const all = applyWyloc(base, tryLoad({ version: 1, languages: ["all"] }).loaded);
+  ok("[all] includes COBOL", all.maskLanguages.includes("cobol") && all.maskLanguages.length === 9);
+
+  const off = applyWyloc(base, tryLoad({ version: 1, languages: ["none"] }).loaded);
+  ok("[none] disables poly masking", off.maskLanguages.length === 0);
+
+  // Unknown language id fails closed with a did-you-mean hint.
+  const { err } = tryLoad({ version: 1, languages: ["pythn"] });
+  ok("unknown language fails closed", err instanceof WylocConfigError);
+  ok("unknown language suggests the right id", err?.problems?.some((p) => p.includes("python")), String(err?.problems));
+
+  // A keyword typo is also caught + suggested.
+  const { err: kwErr } = tryLoad({ version: 1, languages: ["defalts"] });
+  ok("keyword typo suggests 'defaults'", kwErr?.problems?.some((p) => p.includes("defaults")), String(kwErr?.problems));
+
+  // internalPackagePrefixes accepts all nine languages (incl. the last four).
+  const { loaded: ippLoaded, err: ippErr } = tryLoad({
+    version: 1,
+    internalPackagePrefixes: { rust: ["voltra_billing"], cobol: [], cpp: ["voltra"], c: [] },
+  });
+  ok("internalPackagePrefixes accepts rust/c/cpp/cobol", !ippErr && ippLoaded !== undefined, String(ippErr?.problems));
+}
+
+// ── 11. The SHIPPED example config loads clean (doc-rot guard) ─────────
+console.error("\n── shipped example loads ─────────────────────────");
+{
+  const examplePath = new URL("./wyloc.example.json", import.meta.url).pathname;
+  let loaded, err;
+  try { loaded = loadWylocConfig(examplePath); } catch (e) { err = e; }
+  ok("wyloc.example.json loads without error", !err && loaded !== null, String(err?.problems ?? err));
+  ok("example's languages:['defaults'] resolves to the common set",
+    loaded && applyWyloc(loadConfig(), loaded).maskLanguages.length === 8);
+}
+
 console.error(`\n${fail === 0 ? "✓" : "✗"} ${pass} passed, ${fail} failed`);
 if (fails.length) { console.error(fails.join("\n")); process.exit(1); }

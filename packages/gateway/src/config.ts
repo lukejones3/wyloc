@@ -16,6 +16,7 @@
  */
 
 import type { DetectorConfig } from "@wyloc/detector";
+import { DEFAULT_LANGUAGES, IMPLEMENTED_LANGUAGES } from "@wyloc/poly-masker";
 
 /** What to do when the request path detects a secret. */
 export type DetectAction = "swap" | "block";
@@ -101,10 +102,13 @@ export interface GatewayConfig {
    */
   maskEnv: boolean;
   /**
-   * Languages masked by @wyloc/poly-masker (Go/Java/C#/Kotlin/Python), each
-   * loading its tree-sitter grammar lazily. Set via wyloc.json `languages` or
-   * WYLOC_MASK_LANGUAGES ("go,java"). Empty = poly masking off. TS/JS are
-   * separate (maskCode) and stay on the TypeScript Compiler API.
+   * Languages masked by @wyloc/poly-masker (Go/Java/C#/Kotlin/Python/Rust/C/
+   * C++/COBOL), each loading its tree-sitter grammar lazily. DEFAULT: the
+   * common-language set (all implemented except COBOL) — a deployment that
+   * configures nothing still protects them. Narrow via wyloc.json `languages`
+   * or WYLOC_MASK_LANGUAGES; keywords "defaults", "all", "none"/"off". Empty =
+   * poly masking off. TS/JS are separate (maskCode) and stay on the TypeScript
+   * Compiler API.
    */
   maskLanguages: string[];
   /**
@@ -151,6 +155,39 @@ function envStr(name: string, fallback: string): string {
 }
 
 /**
+ * Expand a raw `languages` token list (from WYLOC_MASK_LANGUAGES or wyloc.json)
+ * into concrete language ids. Keywords:
+ *   • "defaults" / "default" → the common-language default set (no COBOL)
+ *   • "all"                  → every implemented language (incl. COBOL)
+ *   • "none" / "off"         → disable poly masking entirely (escape hatch)
+ * Bare language ids pass through in listed order; keywords expand in canonical
+ * order; the result is de-duplicated. Unknown tokens are kept as-is here — the
+ * poly-mask handle filters to IMPLEMENTED_LANGUAGES, and wyloc.json validation
+ * rejects unknown ids upstream (with did-you-mean hints). A `none`/`off` token
+ * anywhere in the list wins and yields the empty set.
+ */
+/** Split a comma/space-separated env value into trimmed, non-empty tokens. */
+function splitList(value: string): string[] {
+  return value.split(/[,\s]+/).map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
+export function resolveMaskLanguages(tokens: readonly string[]): string[] {
+  const out: string[] = [];
+  const add = (l: string): void => {
+    if (!out.includes(l)) out.push(l);
+  };
+  for (const raw of tokens) {
+    const t = raw.trim().toLowerCase();
+    if (t === "") continue;
+    if (t === "none" || t === "off") return [];
+    if (t === "all") IMPLEMENTED_LANGUAGES.forEach(add);
+    else if (t === "default" || t === "defaults") DEFAULT_LANGUAGES.forEach(add);
+    else add(t);
+  }
+  return out;
+}
+
+/**
  * Build the runtime config from environment variables. This is the only
  * place env is read; everything downstream takes a `GatewayConfig`.
  */
@@ -182,16 +219,20 @@ export function loadConfig(): GatewayConfig {
     onDetect,
     injectSystemPrompt: envBool("WYLOC_INJECT_SYSTEM_PROMPT", true),
     verbose: envBool("WYLOC_VERBOSE", true),
-    maskSql: envBool("WYLOC_MASK_SQL", false),
+    // Default ON: baseline coverage without configuration. SQL needs the
+    // sqlglot worker (bundled in the binary; from source it degrades to
+    // detector-only if python3+sqlglot is absent). TS/JS is pure in-process.
+    maskSql: envBool("WYLOC_MASK_SQL", true),
     sqlDialect: envStr("WYLOC_SQL_DIALECT", "postgres"),
-    maskCode: envBool("WYLOC_MASK_CODE", false),
+    maskCode: envBool("WYLOC_MASK_CODE", true),
     maskCodeMembers: envBool("WYLOC_MASK_CODE_MEMBERS", false),
     maskFileReads: envBool("WYLOC_MASK_FILE_READS", true),
     maskEnv: envBool("WYLOC_MASK_ENV", true),
-    maskLanguages: envStr("WYLOC_MASK_LANGUAGES", "")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter((s) => s.length > 0),
+    // Default: the common-language set (COBOL opt-in). WYLOC_MASK_LANGUAGES
+    // unset/empty → defaults; a value narrows/expands it (keywords accepted).
+    maskLanguages: resolveMaskLanguages(
+      splitList(envStr("WYLOC_MASK_LANGUAGES", "defaults")),
+    ),
     projectRoot: envStr("WYLOC_PROJECT_ROOT", process.cwd()),
     internalScopes: [],
     internalDomains: [],

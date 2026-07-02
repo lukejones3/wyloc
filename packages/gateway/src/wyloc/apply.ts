@@ -8,7 +8,7 @@
  * is present the gateway runs exactly as before (env/defaults).
  */
 
-import type { GatewayConfig } from "../config.js";
+import { resolveMaskLanguages, type GatewayConfig } from "../config.js";
 import type { LoadedWylocConfig } from "./load.js";
 
 export function applyWyloc(env: GatewayConfig, w: LoadedWylocConfig): GatewayConfig {
@@ -39,8 +39,11 @@ export function applyWyloc(env: GatewayConfig, w: LoadedWylocConfig): GatewayCon
     },
 
     // Poly-masker: the languages LIST is authoritative when present (a policy
-    // choice, like the toggles above); prefixes merge (both only ever add).
-    maskLanguages: w.languages ?? env.maskLanguages,
+    // choice, like the toggles above) — resolved through the same keyword
+    // expansion as the env layer ("defaults"/"all"/"none" + bare ids), so a
+    // company narrows to what it uses or adds COBOL with e.g.
+    // `["defaults","cobol"]`. Prefixes merge (both only ever add).
+    maskLanguages: w.languages ? resolveMaskLanguages(w.languages) : env.maskLanguages,
     internalPackagePrefixes: mergePrefixMaps(env.internalPackagePrefixes, w.internalPackagePrefixes),
 
     // Code-masker inputs.
