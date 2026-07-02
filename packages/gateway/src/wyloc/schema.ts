@@ -85,7 +85,7 @@ export interface WylocConfig {
    *     "csharp": ["Acme."], "kotlin": ["com.acme."], "python": ["acme_billing"] }
    * Manifest auto-discovery (go.mod, …) merges in additional prefixes.
    */
-  internalPackagePrefixes?: Partial<Record<"go" | "java" | "csharp" | "kotlin" | "python" | "cobol" | "rust", string[]>>;
+  internalPackagePrefixes?: Partial<Record<"go" | "java" | "csharp" | "kotlin" | "python" | "cobol" | "rust" | "c", string[]>>;
   /** Which masking categories are on/off. */
   policy?: {
     sql?: boolean;
@@ -108,7 +108,7 @@ export const WYLOC_TOP_LEVEL_KEYS = [
 ] as const;
 
 /** Languages accepted in `languages` / `internalPackagePrefixes`. */
-export const POLY_LANGUAGES = ["go", "java", "csharp", "kotlin", "python", "cobol", "rust"] as const;
+export const POLY_LANGUAGES = ["go", "java", "csharp", "kotlin", "python", "cobol", "rust", "c"] as const;
 
 /** Known keys on a pattern object, for unknown-key rejection. */
 export const PATTERN_KEYS = ["name", "id", "action", "match", "examples"] as const;

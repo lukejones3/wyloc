@@ -34,6 +34,8 @@ const GRAMMAR_SOURCE: Record<LanguageId, { pkg: string; sub: string; file: strin
   python: { pkg: "tree-sitter-wasms", sub: "out", file: "tree-sitter-python.wasm" },
   cobol: { pkg: "@unit-mesh/treesitter-artifacts", sub: "wasm", file: "tree-sitter-COBOL.wasm" },
   rust: { pkg: "tree-sitter-wasms", sub: "out", file: "tree-sitter-rust.wasm" },
+  c: { pkg: "tree-sitter-wasms", sub: "out", file: "tree-sitter-c.wasm" },
+  cpp: { pkg: "tree-sitter-wasms", sub: "out", file: "tree-sitter-cpp.wasm" },
 };
 
 const require = createRequire(import.meta.url);

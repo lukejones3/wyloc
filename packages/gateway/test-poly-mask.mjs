@@ -310,6 +310,52 @@ const rustFileReadRequest = {
   stream: true,
 };
 
+const VOLTRA_LEDGER_H = [
+  "#ifndef VOLTRA_LEDGER_H",
+  "#define VOLTRA_LEDGER_H",
+  "int ledger_post(const char *entry_id, double amount);",
+  "#endif",
+].join("\n");
+
+const C_FILE = [
+  "/* Voltra billing — reconciliation. Proprietary. */",
+  "#include <stdio.h>",
+  "#include <string.h>",
+  '#include "voltra_ledger.h"',
+  "",
+  "#define POST_ENTRY(id) ledger_post((id), 1.0)",
+  "",
+  "typedef struct invoice_reconciler {",
+  "    unsigned long matched;",
+  "} invoice_reconciler_t;",
+  "",
+  "int reconcile_batch(const char *batch_id) {",
+  "    invoice_reconciler_t rec;",
+  "    memset(&rec, 0, sizeof(rec));",
+  "    POST_ENTRY(batch_id);",
+  "    rec.matched++;",
+  '    printf("matched=%lu\\n", rec.matched);',
+  "    return (int)rec.matched;",
+  "}",
+].join("\n");
+
+const cFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the c reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_8", name: "Read", input: { path: "reconciler.c" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_8", content: [{ type: "text", text: C_FILE }] }],
+    },
+  ],
+  stream: true,
+};
+
 const fencedRequest = {
   model: "claude-opus-4-8",
   max_tokens: 64,
@@ -445,7 +491,7 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go", "java", "csharp", "kotlin", "python", "cobol", "rust"],
+      languages: ["go", "java", "csharp", "kotlin", "python", "cobol", "rust", "c"],
       internalPackagePrefixes: {
         go: ["github.com/voltra/billing-core"],
         java: ["com.voltra."],
@@ -460,6 +506,8 @@ async function main() {
   // The temp dir doubles as the project root: the sibling .cs file feeds the
   // project symbol index, which must resolve LedgerClient as internal.
   writeFileSync(join(dir, "LedgerClient.cs"), SIBLING_CS);
+  // …and the local C header, so ledger_post resolves as internal for C.
+  writeFileSync(join(dir, "voltra_ledger.h"), VOLTRA_LEDGER_H);
 
   const upstream = await startUpstream();
   const gateway = startGateway(wylocPath, dir);
@@ -570,6 +618,20 @@ async function main() {
   assert(rsText.includes("#[derive(Serialize)]"), "[rust] derive attribute untouched (macro conservatism)");
   assert(rsText.includes('println!("posted {} entries", totals.len())'), "[rust] macro invocation contents untouched");
   assert(/\bpost_entry\b/.test(rsText), "[rust] method untouched (members off)");
+
+  console.error("\n── Poly-masking (C): includes + preproc guard ───────");
+  captured = null;
+  await post(cFileReadRequest);
+  assert(captured !== null, "[c] upstream received the request");
+  const cText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\binvoice_reconciler\b/.test(cText) && !/\binvoice_reconciler_t\b/.test(cText), "[c] struct + typedef masked out");
+  assert(!/\breconcile_batch\b/.test(cText), "[c] function masked out");
+  assert(!cText.includes("voltra_ledger.h"), "[c] local include path masked out");
+  assert(!cText.includes("Proprietary"), "[c] comment stripped");
+  assert(cText.includes("#include <stdio.h>"), "[c] system include byte-intact");
+  assert(/\bmemset\b/.test(cText) && /\bprintf\b/.test(cText), "[c] stdlib preserved");
+  assert(cText.includes("#define POST_ENTRY(id) ledger_post((id), 1.0)"), "[c] #define untouched (preproc conservatism, beats the index)");
+  assert(cText.includes("POST_ENTRY(batch_id)"), "[c] macro call site untouched");
 
   gateway.kill("SIGTERM");
   upstream.close();

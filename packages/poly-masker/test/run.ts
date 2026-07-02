@@ -16,6 +16,7 @@ import { APP_KOTLIN, EXTERNAL_ONLY_KOTLIN, KOTLIN_PREFIXES } from "./fixtures/ko
 import { APP_PY, EXTERNAL_ONLY_PY, PYTHON_PREFIXES } from "./fixtures/python.js";
 import { APP_COBOL, VLEDGREC_CPY, EXTERNAL_ONLY_COBOL, FREE_FORMAT_COBOL, OVERFLOW_COBOL } from "./fixtures/cobol.js";
 import { APP_RUST, EXTERNAL_ONLY_RUST, RUST_PREFIXES } from "./fixtures/rust.js";
+import { APP_C, VOLTRA_LEDGER_H, EXTERNAL_ONLY_C } from "./fixtures/c.js";
 
 let passed = 0;
 let failed = 0;
@@ -966,6 +967,126 @@ async function main(): Promise<void> {
       check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
     }
     check(`${g} output re-parses clean`, (await rustParseErrors(r.masked)) === 0);
+  }
+
+  // ====================================================================
+  // PHASE 2 — MASKING (C)
+  // ====================================================================
+  console.log("══ Phase 2: masking (c) ══════════════════════════════════");
+  const cMasker = () => PolyMasker.create({ languages: ["c"] });
+  const cParseErrors = async (code: string) => {
+    const parser = await parserFor("c");
+    const tree = parser.parse(code);
+    return tree ? countParseErrors(tree.rootNode) : Infinity;
+  };
+
+  // ---- Primary fixture: APP_C ----
+  {
+    const r = await cMasker().mask(APP_C, "c");
+    const m = r.masked;
+    const g = "[c/app]";
+    const kindOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.kind;
+    const maskOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.mask;
+
+    // (a) declarations classified
+    check(`${g} struct tag -> type`, kindOf("invoice_reconciler") === "type");
+    check(`${g} typedef -> type`, kindOf("invoice_reconciler_t") === "type");
+    check(`${g} enum tag -> type`, kindOf("reconcile_outcome") === "type");
+    check(`${g} static fn -> function`, kindOf("reconcile_entry") === "function");
+    check(`${g} extern fn -> function`, kindOf("reconcile_batch") === "function");
+
+    // (b) internal identity gone; local include path masked
+    for (const real of ["invoice_reconciler", "invoice_reconciler_t", "reconcile_entry", "reconcile_batch"]) {
+      check(`${g} "${real}" absent`, !wordPresent(m, real));
+    }
+    check(`${g} local include path masked`, !m.includes("voltra_ledger.h") && /#include "masked_mod_[a-z0-9]+\.h"/.test(m));
+    check(`${g} reconcile_entry consistently renamed (3 refs)`, wordCount(m, maskOf("reconcile_entry")!) === 3,
+      `got ${wordCount(m, maskOf("reconcile_entry")!)}`);
+
+    // (c) PREPROCESSOR CONSERVATISM (the Tier-2 rule)
+    check(`${g} #define MAX_BATCH untouched`, m.includes("#define MAX_BATCH 512") && wordCount(m, "MAX_BATCH") === 4);
+    check(`${g} #define POST_ENTRY untouched`, m.includes("#define POST_ENTRY(id, amt)"));
+    check(`${g} macro-body name ledger_post untouched`, wordPresent(m, "ledger_post"));
+    check(`${g} #if condition untouched`, m.includes("#if MAX_BATCH > 256"));
+    check(`${g} POST_ENTRY call site untouched`, m.includes("POST_ENTRY("));
+    // snippet path: header names unresolvable without the index — left alone
+    check(`${g} header fn left alone (no index)`, wordPresent(m, "ledger_open_entries"));
+    // enum CONSTANTS are members (off)
+    check(`${g} enum constants untouched`, wordPresent(m, "RECONCILE_OK") && wordPresent(m, "RECONCILE_FAIL"));
+
+    // (d) NEVER-touch: stdlib/system (make-or-break)
+    for (const ext of ["printf", "memset", "size_t", "sizeof", "stdio", "stdlib", "string"]) {
+      check(`${g} external "${ext}" still present`, m.includes(ext));
+    }
+    check(`${g} system includes byte-intact`, m.includes("#include <stdio.h>") && m.includes("#include <string.h>"));
+
+    // (e) strings / secret / comments (strings INSIDE macro bodies still masked —
+    // substring ops are safe; only identifier renames are macro-gated)
+    check(`${g} internal host masked (inside #define string)`, !m.includes("ledger.internal.voltra.io"));
+    check(`${g} AWS key swapped`, !m.includes("AKIA5XQ2WJ8NPLR3MKVT"));
+    check(`${g} comments gone`, !m.includes("Proprietary") && !m.includes("payments-core"));
+
+    // (f) validity + determinism + idempotency
+    check(`${g} output re-parses clean`, (await cParseErrors(m)) === 0);
+    check(`${g} deterministic`, (await cMasker().mask(APP_C, "c")).masked === m);
+    const r3 = await cMasker().mask(m, "c");
+    for (const { mock } of r.swappedSecrets) {
+      check(`${g} idempotent: ${mock.slice(0, 22)}… survives`, r3.masked.includes(mock));
+    }
+    check(`${g} idempotent: no new secret swap`, r3.swappedSecrets.length === 0);
+
+    // (g) rehydration round-trip incl. invented identifiers
+    const recMask = maskOf("invoice_reconciler_t")!;
+    const reply = `Split ${recMask} into a ${recMask}_view and add batch_stats_t.`;
+    const out = rehydrate(reply, r.session);
+    check(`${g} mask reversed`, out.includes("Split invoice_reconciler_t into"));
+    check(`${g} embedded mask NOT reversed`, out.includes(`${recMask}_view`));
+    check(`${g} invented name passes through`, out.includes("batch_stats_t"));
+    const round = rehydrate(m, r.session);
+    for (const real of ["invoice_reconciler_t", "reconcile_batch", '#include "voltra_ledger.h"', "ledger.internal.voltra.io", "AKIA5XQ2WJ8NPLR3MKVT"]) {
+      check(`${g} round-trip restores ${JSON.stringify(real)}`, round.includes(real));
+    }
+  }
+
+  // ---- FILE-READ PATH: local header via the project index ----
+  {
+    const g = "[c/header-indexed]";
+    const dir = mkdtempSync(join(tmpdir(), "wyloc-c-"));
+    try {
+      writeFileSync(join(dir, "voltra_ledger.h"), VOLTRA_LEDGER_H);
+      const index = new ProjectIndex(dir);
+      const types = await index.internalTypes("c", []);
+      check(`${g} header prototypes + types indexed`,
+        ["ledger_open_entries", "ledger_post", "ledger_entry", "ledger_entry_t"].every((n) => types.has(n)),
+        `indexed: ${[...types].join(", ")}`);
+      check(`${g} header guard #define NOT indexed`, !types.has("VOLTRA_LEDGER_H"));
+
+      const r = await cMasker().mask(APP_C, "c", types);
+      check(`${g} header fn now masked`, !wordPresent(r.masked, "ledger_open_entries"));
+      // conservatism BEATS the index: ledger_post only occurs inside a #define
+      // body, so it stays untouched even though the index knows it's internal.
+      check(`${g} macro-body name still untouched despite index`, wordPresent(r.masked, "ledger_post"));
+      check(`${g} output re-parses clean`, (await cParseErrors(r.masked)) === 0);
+      check(`${g} round-trip restores header fn`, rehydrate(r.masked, r.session).includes("ledger_open_entries"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // ---- NEGATIVE fixture: EXTERNAL_ONLY_C ----
+  {
+    const r = await cMasker().mask(EXTERNAL_ONLY_C, "c");
+    const g = "[c/external-only]";
+    check(`${g} zero identifiers masked`, r.maskedIdentifiers.length === 0,
+      `masked: ${r.maskedIdentifiers.map((x) => x.real).join(", ")}`);
+    check(`${g} zero module specifiers masked`, r.maskedModuleSpecifiers.length === 0);
+    check(`${g} zero strings masked`, r.maskedStrings.length === 0);
+    check(`${g} zero secrets`, r.swappedSecrets.length === 0);
+    check(`${g} main kept (entrypoint)`, r.masked.includes("int main(int argc"));
+    for (const ext of ["getenv", "strncpy", "strtok", "strlen", "printf", "EXIT_SUCCESS"]) {
+      check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
+    }
+    check(`${g} output re-parses clean`, (await cParseErrors(r.masked)) === 0);
   }
 
   // ====================================================================

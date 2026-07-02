@@ -2,6 +2,7 @@ import { scan, buildSwap } from "@wyloc/detector";
 import { SessionMap, maskStringValue, rehydrate } from "@wyloc/code-masker";
 import { resolveConfig, type PolyMaskerConfig, type PolyMaskerConfigInput } from "./config.js";
 import { shortHash } from "./hash.js";
+import { analyzeC } from "./languages/c.js";
 import { analyzeCobol } from "./languages/cobol.js";
 import { analyzeCSharp } from "./languages/csharp.js";
 import { analyzeGo } from "./languages/go.js";
@@ -39,6 +40,7 @@ const ANALYZERS: Partial<Record<LanguageId, Analyzer>> = {
   python: analyzePython,
   cobol: analyzeCobol,
   rust: analyzeRust,
+  c: analyzeC,
 };
 
 /** Languages with an implemented analyzer (config may enable fewer). */
