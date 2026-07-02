@@ -12,6 +12,7 @@ import { countParseErrors } from "../src/tree.js";
 import { APP_GO, EXTERNAL_ONLY_GO, SHADOWED_QUALIFIER_GO, INTERNAL_MODULE } from "./fixtures/go.js";
 import { APP_JAVA, EXTERNAL_ONLY_JAVA, WILDCARD_IMPORT_JAVA, JAVA_PREFIXES } from "./fixtures/java.js";
 import { APP_CSHARP, SIBLING_CS, EXTERNAL_ONLY_CSHARP, CSHARP_PREFIXES } from "./fixtures/csharp.js";
+import { APP_KOTLIN, EXTERNAL_ONLY_KOTLIN, KOTLIN_PREFIXES } from "./fixtures/kotlin.js";
 
 let passed = 0;
 let failed = 0;
@@ -469,6 +470,114 @@ async function main(): Promise<void> {
       check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
     }
     check(`${g} output re-parses clean`, (await csParseErrors(r.masked)) === 0);
+  }
+
+  // ====================================================================
+  // PHASE 2 — MASKING (Kotlin)
+  // ====================================================================
+  console.log("══ Phase 2: masking (kotlin) ═════════════════════════════");
+  const ktMasker = () =>
+    PolyMasker.create({ languages: ["kotlin"], internalPackagePrefixes: { kotlin: [...KOTLIN_PREFIXES] } });
+  const ktParseErrors = async (code: string) => {
+    const parser = await parserFor("kotlin");
+    const tree = parser.parse(code);
+    return tree ? countParseErrors(tree.rootNode) : Infinity;
+  };
+
+  // ---- Primary fixture: APP_KOTLIN (built around the grammar quirks) ----
+  {
+    const r = await ktMasker().mask(APP_KOTLIN, "kotlin");
+    const m = r.masked;
+    const g = "[kotlin/app]";
+    const kindOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.kind;
+    const maskOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.mask;
+
+    // (a) name-field-less declarations all extracted + classified
+    check(`${g} InvoiceReconciler -> class`, kindOf("InvoiceReconciler") === "class");
+    check(`${g} ReconcileResult (data class) -> class`, kindOf("ReconcileResult") === "class");
+    check(`${g} ReconcilerRegistry (object) -> class`, kindOf("ReconcilerRegistry") === "class");
+    check(`${g} BatchSummaries (typealias) -> type`, kindOf("BatchSummaries") === "type");
+    check(`${g} buildReconciler (top-level fn) -> function`, kindOf("buildReconciler") === "function");
+    check(`${g} package -> namespace`, kindOf("com.voltra.billing") === "namespace");
+
+    // (b) QUIRK: import with same-line trailing comment — path rewritten
+    // exactly, comment stripped, nothing mangled.
+    check(`${g} trailing-comment import rewritten`, !m.includes("com.voltra.ledger.LedgerClient"));
+    check(`${g} trailing comment stripped`, !m.includes("ledger service SDK"));
+    check(`${g} comment after import list stripped`, !m.includes("staging swaps the host"));
+    check(`${g} import line still import-shaped`, /import masked\.mod_[a-z0-9]+\.Import_[a-z0-9]+/.test(m));
+
+    // (b') QUIRK: aliased internal import — alias binding + refs renamed
+    const fxMask = maskOf("Fx");
+    check(`${g} alias Fx -> import`, kindOf("Fx") === "import");
+    check(`${g} alias declaration renamed`, !!fxMask && m.includes(`as ${fxMask}`));
+    // 4 = import-path segment + `as` declaration + 2 type references.
+    check(`${g} alias refs renamed (4 total)`, !!fxMask && wordCount(m, fxMask) === 4,
+      `got ${fxMask ? wordCount(m, fxMask) : "-"}`);
+
+    // (c) internal identity gone; consistency
+    for (const real of ["InvoiceReconciler", "ReconcileResult", "LedgerClient", "LedgerEntry", "buildReconciler"]) {
+      check(`${g} "${real}" absent`, !wordPresent(m, real));
+    }
+    check(`${g} no "voltra" anywhere`, !m.toLowerCase().includes("voltra"));
+    check(`${g} InvoiceReconciler consistently renamed (5 refs)`, wordCount(m, maskOf("InvoiceReconciler")!) === 5,
+      `got ${wordCount(m, maskOf("InvoiceReconciler")!)}`);
+
+    // (d) NEVER-touch: stdlib/kotlinx/third-party (make-or-break)
+    for (const ext of [
+      "BigDecimal", "Dispatchers", "withContext", "LoggerFactory", "HttpClient",
+      "runCatching", "groupingBy", "eachCount", "mutableListOf", "suspend",
+    ]) {
+      check(`${g} external "${ext}" still present`, wordPresent(m, ext));
+    }
+    check(`${g} external imports byte-intact`,
+      m.includes("import kotlinx.coroutines.Dispatchers") && m.includes("import io.ktor.client.HttpClient"));
+
+    // (e) members untouched
+    for (const member of ["reconcileBatch", "openEntries", "postEntry", "currency", "amountMinor", "lookup"]) {
+      check(`${g} member "${member}" untouched`, wordPresent(m, member));
+    }
+
+    // (f) interpolated string: internal host masked, interpolation intact
+    check(`${g} internal host masked inside interpolated string`, !m.includes("ledger.internal.voltra.io"));
+    check(`${g} \${entry.id} interpolation intact`, m.includes("${entry.id}"));
+    check(`${g} AWS key swapped`, !m.includes("AKIA5XQ2WJ8NPLR3MKVT"));
+    check(`${g} KDoc gone`, !m.includes("/**") && !m.includes("settlement batches against"));
+
+    // (g) validity + determinism + idempotency
+    check(`${g} output re-parses clean`, (await ktParseErrors(m)) === 0);
+    check(`${g} deterministic`, (await ktMasker().mask(APP_KOTLIN, "kotlin")).masked === m);
+    const r3 = await ktMasker().mask(m, "kotlin");
+    for (const { mock } of r.swappedSecrets) {
+      check(`${g} idempotent: ${mock.slice(0, 22)}… survives`, r3.masked.includes(mock));
+    }
+    check(`${g} idempotent: no new secret swap`, r3.swappedSecrets.length === 0);
+
+    // (h) rehydration round-trip incl. invented identifiers
+    const reconciler = maskOf("InvoiceReconciler")!;
+    const reply = `Make ${reconciler} implement a new Closeable, add ${reconciler}Pool.`;
+    const out = rehydrate(reply, r.session);
+    check(`${g} mask reversed`, out.includes("Make InvoiceReconciler implement"));
+    check(`${g} embedded mask NOT reversed`, out.includes(`${reconciler}Pool`));
+    const round = rehydrate(m, r.session);
+    for (const real of ["InvoiceReconciler", "com.voltra.ledger.LedgerClient", "ledger.internal.voltra.io", "AKIA5XQ2WJ8NPLR3MKVT"]) {
+      check(`${g} round-trip restores ${real}`, round.includes(real));
+    }
+  }
+
+  // ---- NEGATIVE fixture: EXTERNAL_ONLY_KOTLIN ----
+  {
+    const r = await ktMasker().mask(EXTERNAL_ONLY_KOTLIN, "kotlin");
+    const g = "[kotlin/external-only]";
+    check(`${g} zero identifiers masked`, r.maskedIdentifiers.length === 0,
+      `masked: ${r.maskedIdentifiers.map((x) => x.real).join(", ")}`);
+    check(`${g} zero module specifiers masked`, r.maskedModuleSpecifiers.length === 0);
+    check(`${g} zero strings masked`, r.maskedStrings.length === 0);
+    check(`${g} zero secrets`, r.swappedSecrets.length === 0);
+    for (const ext of ["Duration", "runBlocking", "LoggerFactory", "main", "getenv", "isNotEmpty"]) {
+      check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
+    }
+    check(`${g} output re-parses clean`, (await ktParseErrors(r.masked)) === 0);
   }
 
   // ====================================================================

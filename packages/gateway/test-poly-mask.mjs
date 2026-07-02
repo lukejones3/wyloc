@@ -17,6 +17,8 @@
  *      file must still route to the poly-masker (`package x.y;` sniff), not be
  *      parsed as TypeScript by the loose looksLikeCode() sniff — internal
  *      names masked, slf4j/Spring untouched.
+ *
+ *   4. C# PROJECT INDEX + 5. KOTLIN SNIFF: see per-scenario sections.
  */
 
 import { fileURLToPath } from "node:url";
@@ -160,6 +162,41 @@ const csharpFileReadRequest = {
   stream: true,
 };
 
+const KOTLIN_FILE = [
+  "// Voltra billing — reconciliation service. Proprietary.",
+  "package com.voltra.billing",
+  "",
+  "import org.slf4j.LoggerFactory",
+  "import com.voltra.ledger.LedgerClient // ledger SDK",
+  "",
+  "class InvoiceReconciler(private val ledgerClient: LedgerClient) {",
+  "    private val log = LoggerFactory.getLogger(InvoiceReconciler::class.java)",
+  "",
+  "    fun reconcile(ids: List<String>): Int {",
+  "        ids.forEach { ledgerClient.postEntry(it) }",
+  "        log.info(\"posted {} entries\", ids.size)",
+  "        return ids.size",
+  "    }",
+  "}",
+].join("\n");
+
+const kotlinFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the kotlin reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_4", name: "Read", input: { path: "InvoiceReconciler.kt" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_4", content: [{ type: "text", text: KOTLIN_FILE }] }],
+    },
+  ],
+  stream: true,
+};
+
 const fencedRequest = {
   model: "claude-opus-4-8",
   max_tokens: 64,
@@ -295,11 +332,12 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go", "java", "csharp"],
+      languages: ["go", "java", "csharp", "kotlin"],
       internalPackagePrefixes: {
         go: ["github.com/voltra/billing-core"],
         java: ["com.voltra."],
         csharp: ["Voltra."],
+        kotlin: ["com.voltra."],
       },
       // TS/JS masking ON — scenario 3 proves Java still routes to poly.
       policy: { code: true },
@@ -364,6 +402,18 @@ async function main() {
   assert(csText.includes("using System.Net.Http;"), "[csharp] external using byte-intact");
   assert(!csText.includes("Proprietary"), "[csharp] comment stripped");
   assert(/\bPostEntry\b/.test(csText), "[csharp] member 'PostEntry' untouched (members off)");
+
+  console.error("\n── Poly-masking (Kotlin): sniff (no semicolon) ──────");
+  captured = null;
+  await post(kotlinFileReadRequest);
+  assert(captured !== null, "[kotlin] upstream received the request");
+  const ktText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\bInvoiceReconciler\b/.test(ktText), "[kotlin] class masked out");
+  assert(!ktText.includes("com.voltra"), "[kotlin] internal package + import masked out");
+  assert(!ktText.includes("ledger SDK"), "[kotlin] trailing import comment stripped (grammar quirk)");
+  assert(ktText.includes("import org.slf4j.LoggerFactory"), "[kotlin] external import byte-intact");
+  assert(/\bforEach\b/.test(ktText) && /\bLoggerFactory\b/.test(ktText), "[kotlin] externals preserved");
+  assert(/\breconcile\b/.test(ktText), "[kotlin] method untouched (members off)");
 
   gateway.kill("SIGTERM");
   upstream.close();
