@@ -14,5 +14,6 @@
 export { PolyMasker, PolyMaskError, IMPLEMENTED_LANGUAGES, type MaskResult } from "./engine.js";
 export { resolveConfig, type PolyMaskerConfig, type PolyMaskerConfigInput } from "./config.js";
 export { discoverInternalPrefixes } from "./discover.js";
+export { ProjectIndex } from "./project-index.js";
 export { SessionMap, rehydrate } from "@wyloc/code-masker";
 export { LANGUAGE_IDS, type LanguageId, type MaskKind } from "./types.js";

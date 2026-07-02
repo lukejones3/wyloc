@@ -107,6 +107,59 @@ const javaFileReadRequest = {
   stream: true,
 };
 
+// Sibling file for the project symbol index (written to the temp project root).
+const SIBLING_CS = [
+  "using System.Net.Http;",
+  "namespace Voltra.Ledger",
+  "{",
+  "    public class LedgerClient",
+  "    {",
+  "        public LedgerClient(HttpClient http) {}",
+  "        public void PostEntry(string id) {}",
+  "    }",
+  "}",
+].join("\n");
+
+const CSHARP_FILE = [
+  "// Voltra billing — reconciliation service. Proprietary.",
+  "using System;",
+  "using System.Net.Http;",
+  "using Voltra.Ledger;",
+  "",
+  "namespace Voltra.Billing",
+  "{",
+  "    public class InvoiceReconciler",
+  "    {",
+  "        private readonly LedgerClient _ledgerClient;",
+  "        private readonly HttpClient _http = new HttpClient();",
+  "",
+  "        public InvoiceReconciler(LedgerClient ledgerClient)",
+  "        {",
+  "            _ledgerClient = ledgerClient;",
+  "        }",
+  "",
+  "        public void Reconcile(string id) => _ledgerClient.PostEntry(id);",
+  "    }",
+  "}",
+].join("\n");
+
+const csharpFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_3", name: "Read", input: { path: "Reconciler.cs" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_3", content: [{ type: "text", text: CSHARP_FILE }] }],
+    },
+  ],
+  stream: true,
+};
+
 const fencedRequest = {
   model: "claude-opus-4-8",
   max_tokens: 64,
@@ -175,7 +228,7 @@ function startUpstream() {
   });
 }
 
-function startGateway(wylocPath) {
+function startGateway(wylocPath, projectRoot) {
   return spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
     cwd: fileURLToPath(new URL(".", import.meta.url)),
     env: {
@@ -183,6 +236,7 @@ function startGateway(wylocPath) {
       WYLOC_GATEWAY_PORT: String(GATEWAY_PORT),
       WYLOC_UPSTREAM_BASE_URL: `http://127.0.0.1:${UPSTREAM_PORT}`,
       WYLOC_CONFIG: wylocPath,
+      WYLOC_PROJECT_ROOT: projectRoot,
       WYLOC_VERBOSE: "true",
     },
     stdio: ["ignore", "inherit", "inherit"],
@@ -241,18 +295,22 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go", "java"],
+      languages: ["go", "java", "csharp"],
       internalPackagePrefixes: {
         go: ["github.com/voltra/billing-core"],
         java: ["com.voltra."],
+        csharp: ["Voltra."],
       },
       // TS/JS masking ON — scenario 3 proves Java still routes to poly.
       policy: { code: true },
     }),
   );
+  // The temp dir doubles as the project root: the sibling .cs file feeds the
+  // project symbol index, which must resolve LedgerClient as internal.
+  writeFileSync(join(dir, "LedgerClient.cs"), SIBLING_CS);
 
   const upstream = await startUpstream();
-  const gateway = startGateway(wylocPath);
+  const gateway = startGateway(wylocPath, dir);
 
   for (let i = 0; i < 80; i++) {
     try { if ((await fetch(`http://127.0.0.1:${GATEWAY_PORT}/healthz`)).ok) break; } catch {}
@@ -293,6 +351,19 @@ async function main() {
   assert(/\bLoggerFactory\b/.test(captured), "[java] external 'LoggerFactory' preserved");
   assert(captured.includes("package masked.mod_"), "[java] package declaration masked, Java syntax kept");
   assert(/\breconcile\b/.test(captured), "[java] method 'reconcile' untouched (members off)");
+
+  console.error("\n── Poly-masking (C#): project index on file-read ────");
+  captured = null;
+  await post(csharpFileReadRequest);
+  assert(captured !== null, "[csharp] upstream received the request");
+  const csText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\bInvoiceReconciler\b/.test(csText), "[csharp] declared class masked out");
+  assert(!csText.includes("Voltra"), "[csharp] internal namespaces + usings masked out");
+  assert(!/\bLedgerClient\b/.test(csText), "[csharp] index-resolved 'LedgerClient' masked (the Phase-1 ambiguity)");
+  assert(/\bHttpClient\b/.test(csText), "[csharp] external 'HttpClient' preserved");
+  assert(csText.includes("using System.Net.Http;"), "[csharp] external using byte-intact");
+  assert(!csText.includes("Proprietary"), "[csharp] comment stripped");
+  assert(/\bPostEntry\b/.test(csText), "[csharp] member 'PostEntry' untouched (members off)");
 
   gateway.kill("SIGTERM");
   upstream.close();

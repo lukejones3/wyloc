@@ -6,11 +6,12 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PolyMasker, PolyMaskError, discoverInternalPrefixes, rehydrate } from "../src/index.js";
+import { PolyMasker, PolyMaskError, ProjectIndex, discoverInternalPrefixes, rehydrate } from "../src/index.js";
 import { parserFor } from "../src/parsers.js";
 import { countParseErrors } from "../src/tree.js";
 import { APP_GO, EXTERNAL_ONLY_GO, SHADOWED_QUALIFIER_GO, INTERNAL_MODULE } from "./fixtures/go.js";
 import { APP_JAVA, EXTERNAL_ONLY_JAVA, WILDCARD_IMPORT_JAVA, JAVA_PREFIXES } from "./fixtures/java.js";
+import { APP_CSHARP, SIBLING_CS, EXTERNAL_ONLY_CSHARP, CSHARP_PREFIXES } from "./fixtures/csharp.js";
 
 let passed = 0;
 let failed = 0;
@@ -337,6 +338,137 @@ async function main(): Promise<void> {
       wordCount(r2.masked, r2.maskedIdentifiers.find((x) => x.real === "Retrier")!.mask) === 2);
     check(`${g} System.out::println still intact`, r2.masked.includes("System.out::println"));
     check(`${g} indexed output re-parses clean`, (await javaParseErrors(r2.masked)) === 0);
+  }
+
+  // ====================================================================
+  // PHASE 2 — MASKING (C#)
+  // ====================================================================
+  console.log("══ Phase 2: masking (csharp) ═════════════════════════════");
+  const csMasker = () =>
+    PolyMasker.create({ languages: ["csharp"], internalPackagePrefixes: { csharp: [...CSHARP_PREFIXES] } });
+  const csParseErrors = async (code: string) => {
+    const parser = await parserFor("csharp");
+    const tree = parser.parse(code);
+    return tree ? countParseErrors(tree.rootNode) : Infinity;
+  };
+  // The C# ambiguity case: types used here but declared in OTHER files,
+  // reachable only via `using Voltra.Ledger;`-style namespace imports.
+  const AMBIGUOUS = ["LedgerClient", "LedgerEntry", "IFxRateProvider"];
+
+  // ---- SNIPPET PATH (no project index): must under-mask SAFELY ----
+  {
+    const r = await csMasker().mask(APP_CSHARP, "csharp");
+    const m = r.masked;
+    const g = "[csharp/snippet]";
+    const kindOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.kind;
+    const maskOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.mask;
+
+    // (a) declared-in-file identity masked
+    check(`${g} InvoiceReconciler -> class`, kindOf("InvoiceReconciler") === "class");
+    check(`${g} ReconcileResult -> class`, kindOf("ReconcileResult") === "class");
+    check(`${g} namespace masked`, kindOf("Voltra.Billing") === "namespace" && !m.includes("namespace Voltra.Billing"));
+    check(`${g} "InvoiceReconciler" absent`, !wordPresent(m, "InvoiceReconciler"));
+    check(`${g} internal using paths masked`, !m.includes("using Voltra.Ledger;") && !m.includes("using Voltra.Billing.Fx;"));
+    check(`${g} fully-qualified internal ref masked`, !m.includes("Voltra.Ledger.LedgerClient"));
+    check(`${g} no "Voltra" anywhere`, !m.includes("Voltra"));
+
+    // (b) THE C# RULE: ambiguous names (from other files, no index) are LEFT
+    // ALONE — under-masked, never mismasked. They survive verbatim…
+    for (const name of AMBIGUOUS) {
+      check(`${g} ambiguous "${name}" left alone (no index)`, wordPresent(m, name));
+      check(`${g} "${name}" not in session`, r.maskedIdentifiers.every((x) => x.real !== name));
+    }
+
+    // (c) …and so does everything external (make-or-break).
+    for (const ext of [
+      "HttpClient", "ILogger", "Task", "TimeSpan", "Dictionary", "IEnumerable",
+      "IReadOnlyList", "HttpRequestException", "GroupBy", "ToDictionary",
+      "LogWarning",
+    ]) {
+      check(`${g} external "${ext}" still present`, wordPresent(m, ext));
+    }
+    check(`${g} external usings byte-intact`,
+      m.includes("using System.Linq;") && m.includes("using Microsoft.Extensions.Logging;") && m.includes("using Newtonsoft.Json;"));
+
+    // (d) members untouched
+    for (const member of ["ReconcileBatchAsync", "OpenEntriesAsync", "PostEntryAsync", "Lookup", "Currency", "AmountMinor"]) {
+      check(`${g} member "${member}" untouched`, wordPresent(m, member));
+    }
+
+    // (e) strings / secret / comments / validity
+    check(`${g} internal host masked`, !m.includes("ledger.internal.voltra.io"));
+    check(`${g} AWS key swapped`, !m.includes("AKIA5XQ2WJ8NPLR3MKVT"));
+    check(`${g} comments gone`, !m.includes("///") && !m.includes("payments-core") && !m.includes("Immutable summary"));
+    check(`${g} output re-parses clean`, (await csParseErrors(m)) === 0);
+    check(`${g} deterministic`, (await csMasker().mask(APP_CSHARP, "csharp")).masked === m);
+
+    // (f) idempotency with the detector
+    const r3 = await csMasker().mask(m, "csharp");
+    for (const { mock } of r.swappedSecrets) {
+      check(`${g} idempotent: ${mock.slice(0, 22)}… survives`, r3.masked.includes(mock));
+    }
+    check(`${g} idempotent: no new secret swap`, r3.swappedSecrets.length === 0);
+
+    // (g) rehydration round-trip incl. invented identifiers
+    const reconciler = maskOf("InvoiceReconciler")!;
+    const reply = `Split ${reconciler} into a ${reconciler}Base and a new BatchScheduler.`;
+    const out = rehydrate(reply, r.session);
+    check(`${g} mask reversed`, out.includes("Split InvoiceReconciler into"));
+    check(`${g} embedded mask NOT reversed`, out.includes(`${reconciler}Base`));
+    check(`${g} invented name passes through`, out.includes("BatchScheduler"));
+    const round = rehydrate(m, r.session);
+    for (const real of ["InvoiceReconciler", "using Voltra.Ledger;", "namespace Voltra.Billing", "ledger.internal.voltra.io", "AKIA5XQ2WJ8NPLR3MKVT"]) {
+      check(`${g} round-trip restores ${JSON.stringify(real)}`, round.includes(real));
+    }
+  }
+
+  // ---- FILE-READ PATH (project index from a real temp project) ----
+  {
+    const g = "[csharp/indexed]";
+    const dir = mkdtempSync(join(tmpdir(), "wyloc-csproj-"));
+    try {
+      writeFileSync(join(dir, "LedgerClient.cs"), SIBLING_CS);
+      writeFileSync(join(dir, "InvoiceReconciler.cs"), APP_CSHARP);
+      const index = new ProjectIndex(dir);
+      const types = await index.internalTypes("csharp", CSHARP_PREFIXES);
+      check(`${g} index finds sibling types`, AMBIGUOUS.every((n) => types.has(n)),
+        `indexed: ${[...types].join(", ")}`);
+      check(`${g} index has no false internals`, !types.has("HttpClient") && !types.has("Task"));
+
+      const r = await csMasker().mask(APP_CSHARP, "csharp", types);
+      const m = r.masked;
+      // The ambiguity resolves: all three now masked, consistently.
+      for (const name of AMBIGUOUS) {
+        check(`${g} indexed "${name}" masked`, !wordPresent(m, name));
+      }
+      const clientMask = r.maskedIdentifiers.find((x) => x.real === "LedgerClient")!.mask;
+      check(`${g} LedgerClient consistently renamed (3 refs)`, wordCount(m, clientMask) === 3,
+        `got ${wordCount(m, clientMask)}`);
+      // Externals STILL intact with the index on — the index adds no false internals.
+      for (const ext of ["HttpClient", "ILogger", "Task", "TimeSpan"]) {
+        check(`${g} external "${ext}" still present`, wordPresent(m, ext));
+      }
+      check(`${g} output re-parses clean`, (await csParseErrors(m)) === 0);
+      const round = rehydrate(m, r.session);
+      check(`${g} round-trip restores LedgerClient`, round.includes("LedgerClient"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // ---- NEGATIVE fixture: EXTERNAL_ONLY_CSHARP (top-level program) ----
+  {
+    const r = await csMasker().mask(EXTERNAL_ONLY_CSHARP, "csharp");
+    const g = "[csharp/external-only]";
+    check(`${g} zero identifiers masked`, r.maskedIdentifiers.length === 0,
+      `masked: ${r.maskedIdentifiers.map((x) => x.real).join(", ")}`);
+    check(`${g} zero module specifiers masked`, r.maskedModuleSpecifiers.length === 0);
+    check(`${g} zero strings masked`, r.maskedStrings.length === 0);
+    check(`${g} zero secrets`, r.swappedSecrets.length === 0);
+    for (const ext of ["HttpClient", "TimeSpan", "Environment", "Console", "StringSplitOptions", "Select", "ToList"]) {
+      check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
+    }
+    check(`${g} output re-parses clean`, (await csParseErrors(r.masked)) === 0);
   }
 
   // ====================================================================
