@@ -47,6 +47,36 @@ const TICKET = "TKT-1234";
 const UP_PORT = 9700;
 const GW_PORT = 9701;
 
+// The nine grammar wasm files that MUST ship next to the binary (the fix for
+// the silent-grammar-degradation bug — verified per platform below).
+const POLY_GRAMMARS = [
+  "tree-sitter-go.wasm", "tree-sitter-java.wasm", "tree-sitter-c_sharp.wasm",
+  "tree-sitter-kotlin.wasm", "tree-sitter-python.wasm", "tree-sitter-rust.wasm",
+  "tree-sitter-c.wasm", "tree-sitter-cpp.wasm", "tree-sitter-COBOL.wasm",
+];
+
+// One fenced block per language, each DECLARING an internal identifier that
+// must be masked (declaration is internal by definition — no prefix needed, so
+// this proves grammar load+mask independent of internalPackagePrefixes).
+const POLY_SNIPPETS = {
+  go: "package billing\nfunc GoReconcile() {}\n",
+  java: "public class JavaReconciler {}\n",
+  cs: "class CsReconciler {}\n",
+  kotlin: "class KtReconciler\n",
+  python: "class PyReconciler:\n    pass\n",
+  rust: "pub struct RsReconciler;\n",
+  c: "struct c_reconciler { int x; };\n",
+  cpp: "class CppReconciler {};\n",
+  cobol: "000100 IDENTIFICATION DIVISION.\n000200 PROGRAM-ID. COBOLPROG.\n000300 PROCEDURE DIVISION.\n000400 MAIN-PARA.\n000500     STOP RUN.\n",
+};
+
+// The internal identifier each snippet should mask OUT of the forwarded body.
+const POLY_MARKERS = {
+  go: "GoReconcile", java: "JavaReconciler", csharp: "CsReconciler",
+  kotlin: "KtReconciler", python: "PyReconciler", rust: "RsReconciler",
+  c: "c_reconciler", cpp: "CppReconciler", cobol: "COBOLPROG",
+};
+
 let passed = 0, failed = 0;
 const ok = (n, c, d = "") => { if (c) { passed++; console.error(`  ✓ ${n}`); } else { failed++; console.error(`  ✗ ${n}${d ? " — " + d : ""}`); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -81,7 +111,9 @@ async function main() {
   writeFileSync(cfg, JSON.stringify({
     version: 1,
     patterns: [{ name: "Ticket", match: { type: "regex", advanced: true, source: "TKT-\\d{4}" }, examples: { match: ["TKT-1234"] } }],
-    languages: ["go", "cobol"],
+    // "all" enables every poly language INCLUDING COBOL (opt-in) — the binary
+    // must ship + load all nine grammars and mask them on THIS platform.
+    languages: ["all"],
     internalPackagePrefixes: { go: ["github.com/voltra/billing-core"] },
   }));
 
@@ -137,23 +169,66 @@ async function main() {
   ok("raw-regex pattern masked (bundled RE2)", captured !== null && !captured.includes(TICKET), "RE2 raw-regex did NOT work out-of-box");
   ok("mock placeholders present", captured !== null && captured.includes("WYLOC_MOCK_"));
 
-  // 5. Poly masking from bundled wasm grammars — Go (fenced) and COBOL
-  //    (fenced; also proves the SEA re-exec guard did NOT misfire: the binary
-  //    must keep serving with cobol enabled, no child spawn, no V8 OOM).
+  // ── 5. Poly grammars: SHIP + LOAD + MASK on this platform ────────────────────
+  // This is the cross-platform guard for the silent-grammar-degradation bug
+  // (found + fixed on darwin-arm64): "grammars don't load on Windows",
+  // "re-exec misbehaves on Linux". Fails loudly per platform.
+
+  // 5a. All nine grammar wasm files + the web-tree-sitter core ship next to the
+  //     binary (the fix that keeps poly masking from silently degrading to
+  //     detector-only in the SEA build).
+  const wasmDir = join(dist, "runtime", "wasm");
+  for (const g of POLY_GRAMMARS) {
+    ok(`grammar ships: ${g}`, existsSync(join(wasmDir, g)), `missing ${join(wasmDir, g)}`);
+  }
+  ok("web-tree-sitter core wasm ships", existsSync(join(wasmDir, "tree-sitter.wasm")));
+
+  // 5b. The COBOL re-exec guard did NOT misfire inside the SEA binary (pinned
+  //     Node 22 is safe; isSea() must suppress the --liftoff-only re-exec).
   ok("re-exec correctly suppressed inside SEA", !/re-executing with --liftoff-only/.test(stderr), lastLines(stderr));
+
+  // 5c. All nine grammars LOAD + MASK: one request with a fenced block per
+  //     language, each declaring an internal identifier that must be masked
+  //     out. Proves every grammar loads from the bundled wasm on this OS — not
+  //     just that the files are present. (Declared identifiers mask without
+  //     needing internalPackagePrefixes, so this is prefix-independent.)
   if (up) {
     captured = null;
-    const GO = "package billing\n\nimport (\n\t\"fmt\"\n\n\t\"github.com/voltra/billing-core/internal/ledger\"\n)\n\nfunc ReconcileBatch(c *ledger.Client) {\n\tfmt.Println(c != nil)\n}\n";
-    const CBL = "000100 IDENTIFICATION DIVISION.\n000200 PROGRAM-ID. VBILLRECON.\n000300 DATA DIVISION.\n000400 WORKING-STORAGE SECTION.\n000500 01  WS-MATCHED-CNT PIC 9(6) VALUE ZERO.\n000600 PROCEDURE DIVISION.\n000700 MAIN-PARA.\n000800     ADD 1 TO WS-MATCHED-CNT\n000900     STOP RUN.\n";
+    let content = "review these:\n";
+    for (const [tag, snippet] of Object.entries(POLY_SNIPPETS)) {
+      content += "```" + tag + "\n" + snippet + "\n```\n";
+    }
     await fetch(`http://127.0.0.1:${GW_PORT}/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": "sk-FAKE", "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "x", max_tokens: 16, messages: [{ role: "user", content: "review:\n```go\n" + GO + "```\nand:\n```cobol\n" + CBL + "```" }] }),
+      body: JSON.stringify({ model: "x", max_tokens: 16, messages: [{ role: "user", content }] }),
     }).catch(() => {});
-    await sleep(1500);
+    await sleep(2000);
   }
-  ok("Go masked from bundled wasm (poly grammars ship)", captured !== null && !captured.includes("ReconcileBatch") && !captured.includes("voltra/billing-core") && captured.includes("fmt"), lastLines(stderr));
-  ok("COBOL masked from bundled wasm (SEA, no flags, no OOM)", captured !== null && !/VBILLRECON|WS-MATCHED-CNT/.test(captured) && /DIVISION/.test(captured), lastLines(stderr));
+  ok("upstream received the multi-language request", captured !== null, lastLines(stderr));
+  for (const [lang, marker] of Object.entries(POLY_MARKERS)) {
+    const masked = captured !== null && !new RegExp(`\\b${marker}\\b`).test(captured);
+    ok(`${lang} masked from bundled wasm (grammar loads on ${platform})`, masked,
+      captured === null ? "no request captured" : `"${marker}" survived — grammar likely degraded to detector-only`);
+  }
+
+  // 5d. The FILE-READ / content-router path also works from the binary (a Go
+  //     file the agent "read", sent as a tool_result — not fenced).
+  if (up) {
+    captured = null;
+    const GO_FILE = "package billing\n\nimport \"fmt\"\n\nfunc FileReadReconcile() {\n\tfmt.Println(\"x\")\n}\n";
+    await fetch(`http://127.0.0.1:${GW_PORT}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": "sk-FAKE", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "x", max_tokens: 16, messages: [
+        { role: "user", content: "read it" },
+        { role: "assistant", content: [{ type: "tool_use", id: "tu_v", name: "Read", input: { path: "r.go" } }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_v", content: [{ type: "text", text: GO_FILE }] }] },
+      ] }),
+    }).catch(() => {});
+    await sleep(1200);
+  }
+  ok("file-read content-router masks poly code from the binary", captured !== null && !/\bFileReadReconcile\b/.test(captured) && captured.includes("fmt"), lastLines(stderr));
 
   gw.kill("SIGTERM"); upstream.close();
   await sleep(200);

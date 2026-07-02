@@ -1,6 +1,14 @@
 # Build the standalone gateway distribution AND run the load-bearing
-# clean-machine verification (SQL + raw-regex out-of-the-box) on EACH target,
-# natively. "Works out of the box" is proven per platform here, not asserted.
+# clean-machine verification on EACH target, natively. "Works out of the box"
+# is proven per platform here, not asserted. The verification covers:
+#   • secret masking (detector, pure JS)
+#   • SQL masking (bundled Python + sqlglot)
+#   • raw-regex custom patterns (bundled RE2)
+#   • ALL NINE poly grammars ship + load + mask from the bundled runtime/wasm
+#     (Go/Java/C#/Kotlin/Python/Rust/C/C++/COBOL) — the cross-platform guard
+#     against the silent-grammar-degradation bug (grammars that don't load on a
+#     given OS silently degrade masking to detector-only), incl. COBOL with the
+#     --liftoff-only re-exec correctly SUPPRESSED inside the SEA binary.
 #
 # Trigger strategy:
 #   • push to main / manual dispatch → full native build+verify matrix (heavy).
@@ -40,6 +48,7 @@ jobs:
         run: |
           npm test --workspace @wyloc/detector
           npm test --workspace @wyloc/code-masker
+          npm test --workspace @wyloc/poly-masker
           npm test --workspace @wyloc/sql-masker
           npm test --workspace @wyloc/gateway
 
@@ -92,17 +101,20 @@ jobs:
 
       # 3. THE load-bearing check: clean machine (no system Python/Node) →
       #    healthz + secret mask + SQL mask (bundled Python) + raw-regex (bundled
-      #    RE2). Fails the job loudly if the differentiator doesn't work here.
-      - name: Clean-machine verification (SQL + RE2 out-of-the-box)
+      #    RE2) + all nine poly grammars ship/load/mask from bundled wasm (incl.
+      #    COBOL, re-exec suppressed in SEA). Fails the job loudly per platform if
+      #    the differentiator OR any grammar doesn't work here.
+      - name: Clean-machine verification (SQL + RE2 + 9 poly grammars out-of-the-box)
         run: node packages/gateway/scripts/verify-binary.mjs --platform ${{ matrix.target }}
 
       # 4. Pure-JS test suites on every platform (catch platform JS breakage).
       #    The Python-dependent suites run in the `test` job; the per-platform SQL
       #    proof is the verification above (it uses the BUNDLED Python).
-      - name: Pure-JS test suites
+      - name: Pure-JS test suites (incl. poly-masker analyzers)
         run: |
           npm test --workspace @wyloc/detector
           npm test --workspace @wyloc/code-masker
+          npm test --workspace @wyloc/poly-masker
 
       # 5. Upload the built distribution so any platform can be downloaded/tested.
       - name: Upload distribution
@@ -119,9 +131,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ **${{ matrix.target }}** — natively built + run-verified on \`${{ matrix.os }}\` (SQL + raw-regex masking proven out-of-the-box)" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ **${{ matrix.target }}** — natively built + run-verified on \`${{ matrix.os }}\` (SQL + raw-regex + all 9 poly grammars proven to ship/load/mask out-of-the-box)" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "❌ **${{ matrix.target }}** — FAILED on \`${{ matrix.os }}\` (build or clean-machine SQL/RE2 verification did not pass)" >> "$GITHUB_STEP_SUMMARY"
+            echo "❌ **${{ matrix.target }}** — FAILED on \`${{ matrix.os }}\` (build or clean-machine verification did not pass — a differentiator or a poly grammar did not work on this OS)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # ── Signing note (no real certs in CI; hooks live in build-binary.mjs) ───────
