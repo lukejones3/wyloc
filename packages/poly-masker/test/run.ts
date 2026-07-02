@@ -13,6 +13,7 @@ import { APP_GO, EXTERNAL_ONLY_GO, SHADOWED_QUALIFIER_GO, INTERNAL_MODULE } from
 import { APP_JAVA, EXTERNAL_ONLY_JAVA, WILDCARD_IMPORT_JAVA, JAVA_PREFIXES } from "./fixtures/java.js";
 import { APP_CSHARP, SIBLING_CS, EXTERNAL_ONLY_CSHARP, CSHARP_PREFIXES } from "./fixtures/csharp.js";
 import { APP_KOTLIN, EXTERNAL_ONLY_KOTLIN, KOTLIN_PREFIXES } from "./fixtures/kotlin.js";
+import { APP_PY, EXTERNAL_ONLY_PY, PYTHON_PREFIXES } from "./fixtures/python.js";
 
 let passed = 0;
 let failed = 0;
@@ -203,8 +204,14 @@ async function main(): Promise<void> {
     const dir = mkdtempSync(join(tmpdir(), "wyloc-poly-"));
     try {
       writeFileSync(join(dir, "go.mod"), `module ${INTERNAL_MODULE}\n\ngo 1.22\n`);
+      writeFileSync(join(dir, "pom.xml"), `<project><groupId>com.voltra</groupId><artifactId>billing</artifactId></project>`);
+      writeFileSync(join(dir, "Voltra.Billing.csproj"), `<Project><PropertyGroup><RootNamespace>Voltra.Billing</RootNamespace></PropertyGroup></Project>`);
+      writeFileSync(join(dir, "pyproject.toml"), `[project]\nname = "voltra-billing"\n`);
       const found = discoverInternalPrefixes(dir);
       check("[discover] go.mod module found", found.go?.[0] === INTERNAL_MODULE);
+      check("[discover] pom groupId -> java+kotlin prefixes", found.java?.[0] === "com.voltra." && found.kotlin?.[0] === "com.voltra.");
+      check("[discover] csproj RootNamespace -> csharp prefix", found.csharp?.[0] === "Voltra.");
+      check("[discover] pyproject name -> python package", found.python?.[0] === "voltra_billing");
       check("[discover] empty root finds nothing", Object.keys(discoverInternalPrefixes("")).length === 0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -578,6 +585,108 @@ async function main(): Promise<void> {
       check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
     }
     check(`${g} output re-parses clean`, (await ktParseErrors(r.masked)) === 0);
+  }
+
+  // ====================================================================
+  // PHASE 2 — MASKING (Python)
+  // ====================================================================
+  console.log("══ Phase 2: masking (python) ═════════════════════════════");
+  const pyMasker = () =>
+    PolyMasker.create({ languages: ["python"], internalPackagePrefixes: { python: [...PYTHON_PREFIXES] } });
+  const pyParseErrors = async (code: string) => {
+    const parser = await parserFor("python");
+    const tree = parser.parse(code);
+    return tree ? countParseErrors(tree.rootNode) : Infinity;
+  };
+
+  // ---- Primary fixture: APP_PY ----
+  {
+    const r = await pyMasker().mask(APP_PY, "python");
+    const m = r.masked;
+    const g = "[python/app]";
+    const kindOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.kind;
+    const maskOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.mask;
+
+    // (a) declarations + import bindings classified
+    check(`${g} InvoiceReconciler -> class`, kindOf("InvoiceReconciler") === "class");
+    check(`${g} ReconcileResult -> class`, kindOf("ReconcileResult") === "class");
+    check(`${g} summarize_by_currency -> function`, kindOf("summarize_by_currency") === "function");
+    check(`${g} LedgerClient (absolute internal) -> import`, kindOf("LedgerClient") === "import");
+    check(`${g} LedgerEntry (relative) -> import`, kindOf("LedgerEntry") === "import");
+    check(`${g} voltra_billing (module) -> namespace`, kindOf("voltra_billing") === "namespace");
+
+    // (b) internal identity gone; module paths rewritten
+    for (const real of ["InvoiceReconciler", "ReconcileResult", "LedgerClient", "LedgerEntry", "summarize_by_currency", "voltra_billing"]) {
+      check(`${g} "${real}" absent`, !wordPresent(m, real));
+    }
+    check(`${g} relative import path masked, dot kept`, /from \.mod_[a-z0-9]+ import/.test(m));
+    check(`${g} dotted module chain renamed consistently`, /mod_[a-z0-9]+\.mod_[a-z0-9]+\.lookup\(/.test(m),
+      "voltra_billing.fx.lookup -> mod_h1.mod_h2.lookup");
+    check(`${g} import statement matches chain refs`, (() => {
+      const imp = m.match(/import (mod_[a-z0-9]+\.mod_[a-z0-9]+)\n/)?.[1];
+      return !!imp && m.includes(`${imp}.lookup(`);
+    })());
+
+    // (c) NEVER-touch: stdlib + pip (make-or-break)
+    for (const ext of [
+      "logging", "os", "dataclass", "field", "Decimal", "Iterable", "requests",
+      "retry", "stop_after_attempt", "Session", "HTTPError", "environ", "getLogger",
+    ]) {
+      check(`${g} external "${ext}" still present`, wordPresent(m, ext));
+    }
+    check(`${g} external imports byte-intact`,
+      m.includes("from dataclasses import dataclass, field") && m.includes("from tenacity import retry, stop_after_attempt"));
+
+    // (d) DYNAMIC-TYPING RULE: members/attributes never masked
+    for (const member of ["reconcile_batch", "open_entries", "ledger_client", "currency", "amount_minor", "batch_id", "matched", "failed"]) {
+      check(`${g} attribute/member "${member}" untouched`, wordPresent(m, member));
+    }
+    check(`${g} __init__/__name__ untouched`, m.includes("__init__") && m.includes("__name__"));
+
+    // (e) strings / docstrings / comments / secret
+    check(`${g} internal host masked (const + f-string)`, !m.includes("ledger.internal.voltra.io"));
+    check(`${g} f-string interpolation intact`, m.includes("{entry.id}"));
+    check(`${g} AWS key swapped`, !m.includes("AKIA5XQ2WJ8NPLR3MKVT"));
+    check(`${g} module docstring gone`, !m.includes("payments-core"));
+    check(`${g} class/method docstrings gone`, !m.includes("Immutable summary") && !m.includes("Walks one settlement batch"));
+    check(`${g} # comments gone`, !m.includes("# Internal ledger endpoint"));
+
+    // (f) validity + determinism + idempotency
+    check(`${g} output re-parses clean`, (await pyParseErrors(m)) === 0);
+    check(`${g} deterministic`, (await pyMasker().mask(APP_PY, "python")).masked === m);
+    const r3 = await pyMasker().mask(m, "python");
+    for (const { mock } of r.swappedSecrets) {
+      check(`${g} idempotent: ${mock.slice(0, 22)}… survives`, r3.masked.includes(mock));
+    }
+    check(`${g} idempotent: no new secret swap`, r3.swappedSecrets.length === 0);
+
+    // (g) rehydration round-trip incl. invented identifiers
+    const reconciler = maskOf("InvoiceReconciler")!;
+    const reply = `Add a BatchQueue to ${reconciler}; subclass ${reconciler}V2 if needed.`;
+    const out = rehydrate(reply, r.session);
+    check(`${g} mask reversed`, out.includes("to InvoiceReconciler;"));
+    check(`${g} embedded mask NOT reversed`, out.includes(`${reconciler}V2`));
+    check(`${g} invented name passes through`, out.includes("BatchQueue"));
+    const round = rehydrate(m, r.session);
+    for (const real of ["InvoiceReconciler", "voltra_billing.ledger", "ledger.internal.voltra.io", "AKIA5XQ2WJ8NPLR3MKVT"]) {
+      check(`${g} round-trip restores ${real}`, round.includes(real));
+    }
+  }
+
+  // ---- NEGATIVE fixture: EXTERNAL_ONLY_PY ----
+  {
+    const r = await pyMasker().mask(EXTERNAL_ONLY_PY, "python");
+    const g = "[python/external-only]";
+    check(`${g} zero identifiers masked`, r.maskedIdentifiers.length === 0,
+      `masked: ${r.maskedIdentifiers.map((x) => x.real).join(", ")}`);
+    check(`${g} zero module specifiers masked`, r.maskedModuleSpecifiers.length === 0);
+    check(`${g} zero strings masked`, r.maskedStrings.length === 0);
+    check(`${g} zero secrets`, r.swappedSecrets.length === 0);
+    for (const ext of ["json", "timedelta", "Path", "requests", "environ", "status_code"]) {
+      check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
+    }
+    check(`${g} public URL untouched`, r.masked.includes("https://httpbin.org/post"));
+    check(`${g} output re-parses clean`, (await pyParseErrors(r.masked)) === 0);
   }
 
   // ====================================================================

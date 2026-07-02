@@ -197,6 +197,47 @@ const kotlinFileReadRequest = {
   stream: true,
 };
 
+const PY_FILE = [
+  '"""Voltra billing — reconciliation service. Proprietary."""',
+  "import logging",
+  "",
+  "import requests",
+  "",
+  "from voltra_billing.ledger import LedgerClient",
+  "",
+  "log = logging.getLogger(__name__)",
+  "",
+  "",
+  "class InvoiceReconciler:",
+  "    def __init__(self, ledger_client: LedgerClient):",
+  "        self.ledger_client = ledger_client",
+  "        self.session = requests.Session()",
+  "",
+  "    def reconcile(self, batch_ids):",
+  "        # post each entry to the internal ledger",
+  "        for batch_id in batch_ids:",
+  "            self.ledger_client.post_entry(batch_id)",
+  "        log.info('posted %d entries', len(batch_ids))",
+  "        return len(batch_ids)",
+].join("\n");
+
+const pythonFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the python reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_5", name: "Read", input: { path: "reconciler.py" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_5", content: [{ type: "text", text: PY_FILE }] }],
+    },
+  ],
+  stream: true,
+};
+
 const fencedRequest = {
   model: "claude-opus-4-8",
   max_tokens: 64,
@@ -332,12 +373,13 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go", "java", "csharp", "kotlin"],
+      languages: ["go", "java", "csharp", "kotlin", "python"],
       internalPackagePrefixes: {
         go: ["github.com/voltra/billing-core"],
         java: ["com.voltra."],
         csharp: ["Voltra."],
         kotlin: ["com.voltra."],
+        python: ["voltra_billing"],
       },
       // TS/JS masking ON — scenario 3 proves Java still routes to poly.
       policy: { code: true },
@@ -414,6 +456,18 @@ async function main() {
   assert(ktText.includes("import org.slf4j.LoggerFactory"), "[kotlin] external import byte-intact");
   assert(/\bforEach\b/.test(ktText) && /\bLoggerFactory\b/.test(ktText), "[kotlin] externals preserved");
   assert(/\breconcile\b/.test(ktText), "[kotlin] method untouched (members off)");
+
+  console.error("\n── Poly-masking (Python): file-read path ────────────");
+  captured = null;
+  await post(pythonFileReadRequest);
+  assert(captured !== null, "[python] upstream received the request");
+  const pyText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\bInvoiceReconciler\b/.test(pyText), "[python] class masked out");
+  assert(!pyText.includes("voltra_billing"), "[python] internal module path masked out");
+  assert(!pyText.includes("Proprietary"), "[python] module docstring stripped");
+  assert(!pyText.includes("post each entry"), "[python] # comment stripped");
+  assert(pyText.includes("import logging") && /\brequests\b/.test(pyText), "[python] stdlib + pip preserved");
+  assert(/\bledger_client\b/.test(pyText) && /\breconcile\b/.test(pyText), "[python] attributes/methods untouched (dynamic typing)");
 
   gateway.kill("SIGTERM");
   upstream.close();

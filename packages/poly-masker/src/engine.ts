@@ -6,6 +6,7 @@ import { analyzeCSharp } from "./languages/csharp.js";
 import { analyzeGo } from "./languages/go.js";
 import { analyzeJava } from "./languages/java.js";
 import { analyzeKotlin } from "./languages/kotlin.js";
+import { analyzePython } from "./languages/python.js";
 import { parserFor } from "./parsers.js";
 import { countParseErrors } from "./tree.js";
 import type { Analyzer, AnalyzerCtx, IdentifierKind, LanguageId, MaskKind, Span } from "./types.js";
@@ -33,6 +34,7 @@ const ANALYZERS: Partial<Record<LanguageId, Analyzer>> = {
   java: analyzeJava,
   csharp: analyzeCSharp,
   kotlin: analyzeKotlin,
+  python: analyzePython,
 };
 
 /** Languages with an implemented analyzer (config may enable fewer). */
