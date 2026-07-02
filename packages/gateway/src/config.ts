@@ -100,6 +100,19 @@ export interface GatewayConfig {
    * non-env block is safe (swap+rehydrate), missing a real .env is not.
    */
   maskEnv: boolean;
+  /**
+   * Languages masked by @wyloc/poly-masker (Go/Java/C#/Kotlin/Python), each
+   * loading its tree-sitter grammar lazily. Set via wyloc.json `languages` or
+   * WYLOC_MASK_LANGUAGES ("go,java"). Empty = poly masking off. TS/JS are
+   * separate (maskCode) and stay on the TypeScript Compiler API.
+   */
+  maskLanguages: string[];
+  /**
+   * Root used for project-manifest auto-discovery (go.mod, pom.xml, .csproj,
+   * pyproject.toml → internal package prefixes) — and, later, the project
+   * symbol index. Defaults to the gateway's cwd (where wyloc.json lives).
+   */
+  projectRoot: string;
 
   // ── Derived from wyloc.json (empty unless a config file sets them) ──
   /** Bare import scopes the code-masker treats as internal (e.g. "@acme/*"). */
@@ -110,6 +123,13 @@ export interface GatewayConfig {
   internalTlds: string[];
   /** Blocklist terms fed to the sql/code masker literal passes. */
   blocklistSubstrings: string[];
+  /**
+   * Per-language internal package/module prefixes for the poly-masker — the
+   * analog of internalScopes (go module paths, java/kotlin package prefixes,
+   * C# namespace prefixes, python top-level packages). From wyloc.json;
+   * manifest auto-discovery merges in at the handle.
+   */
+  internalPackagePrefixes: Partial<Record<string, string[]>>;
 }
 
 function envBool(name: string, fallback: boolean): boolean {
@@ -168,9 +188,15 @@ export function loadConfig(): GatewayConfig {
     maskCodeMembers: envBool("WYLOC_MASK_CODE_MEMBERS", false),
     maskFileReads: envBool("WYLOC_MASK_FILE_READS", true),
     maskEnv: envBool("WYLOC_MASK_ENV", true),
+    maskLanguages: envStr("WYLOC_MASK_LANGUAGES", "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0),
+    projectRoot: envStr("WYLOC_PROJECT_ROOT", process.cwd()),
     internalScopes: [],
     internalDomains: [],
     internalTlds: [],
     blocklistSubstrings: [],
+    internalPackagePrefixes: {},
   };
 }

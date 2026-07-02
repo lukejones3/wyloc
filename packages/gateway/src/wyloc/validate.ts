@@ -9,6 +9,7 @@
 
 import {
   PATTERN_KEYS,
+  POLY_LANGUAGES,
   WYLOC_TOP_LEVEL_KEYS,
   type CustomPattern,
   type Format,
@@ -147,6 +148,30 @@ export function validateStructure(raw: unknown): { config: WylocConfig | null; e
 
   for (const key of ["internalScopes", "internalDomains", "internalHosts", "internalTlds", "blocklist"] as const) {
     if (key in raw && !isStringArray(raw[key])) errors.push(`wyloc.json.${key}: must be an array of strings`);
+  }
+
+  if ("languages" in raw) {
+    if (!isStringArray(raw.languages)) errors.push(`wyloc.json.languages: must be an array of strings`);
+    else {
+      for (const lang of raw.languages) {
+        if (!(POLY_LANGUAGES as readonly string[]).includes(lang)) {
+          const hint = closest(lang, POLY_LANGUAGES);
+          errors.push(`wyloc.json.languages: unknown language ${JSON.stringify(lang)}${hint ? ` (did you mean ${JSON.stringify(hint)}?)` : ""} — supported: ${POLY_LANGUAGES.join(", ")} (TS/JS via policy.code)`);
+        }
+      }
+    }
+  }
+
+  if ("internalPackagePrefixes" in raw) {
+    const ipp = raw.internalPackagePrefixes;
+    if (!isObject(ipp)) errors.push(`wyloc.json.internalPackagePrefixes: must be an object keyed by language`);
+    else {
+      checkUnknownKeys(ipp, POLY_LANGUAGES, "wyloc.json.internalPackagePrefixes", errors);
+      for (const [lang, val] of Object.entries(ipp)) {
+        if ((POLY_LANGUAGES as readonly string[]).includes(lang) && !isStringArray(val))
+          errors.push(`wyloc.json.internalPackagePrefixes.${lang}: must be an array of strings`);
+      }
+    }
   }
 
   if ("policy" in raw) {

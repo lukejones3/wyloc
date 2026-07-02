@@ -38,10 +38,27 @@ export function applyWyloc(env: GatewayConfig, w: LoadedWylocConfig): GatewayCon
       suppressedRuleIds,
     },
 
+    // Poly-masker: the languages LIST is authoritative when present (a policy
+    // choice, like the toggles above); prefixes merge (both only ever add).
+    maskLanguages: w.languages ?? env.maskLanguages,
+    internalPackagePrefixes: mergePrefixMaps(env.internalPackagePrefixes, w.internalPackagePrefixes),
+
     // Code-masker inputs.
     internalScopes: [...env.internalScopes, ...w.internalScopes],
     internalDomains: [...env.internalDomains, ...w.internalDomains],
     internalTlds: [...env.internalTlds, ...w.internalTlds],
     blocklistSubstrings: [...env.blocklistSubstrings, ...w.blocklistSubstrings],
   };
+}
+
+function mergePrefixMaps(
+  a: Partial<Record<string, string[]>>,
+  b: Partial<Record<string, string[]>>,
+): Partial<Record<string, string[]>> {
+  const out: Partial<Record<string, string[]>> = { ...a };
+  for (const [lang, prefixes] of Object.entries(b)) {
+    if (!prefixes) continue;
+    out[lang] = [...new Set([...(out[lang] ?? []), ...prefixes])];
+  }
+  return out;
 }

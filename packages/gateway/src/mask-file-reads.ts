@@ -41,6 +41,7 @@ import type { Logger } from "./logger.js";
 import type { SessionStore } from "./session.js";
 import type { SqlMaskHandle } from "./sql-mask.js";
 import type { CodeMaskHandle } from "./code-mask.js";
+import type { PolyMaskHandle } from "./poly-mask.js";
 
 export interface FileReadMaskOutcome {
   body: Buffer;
@@ -91,6 +92,8 @@ export class FileReadMaskHandle {
     private readonly sqlMask: SqlMaskHandle | null,
     private readonly codeMask: CodeMaskHandle | null,
     private readonly log: Logger,
+    // Trailing + optional: existing call sites (and tests) stay valid.
+    private readonly polyMask: PolyMaskHandle | null = null,
   ) {}
 
   private async maskContent(text: string, store: SessionStore, sqlReady: boolean): Promise<MaskRecord> {
@@ -127,6 +130,17 @@ export class FileReadMaskHandle {
         if (r.n > 0) {
           out = r.out;
           masked += r.n;
+        }
+      } else if (this.polyMask?.enabled) {
+        // Go/Java/C#/Kotlin/Python — per-language sniffs are stricter than the
+        // TS one above, and adopt-only-if-masked still protects a misroute.
+        const lang = this.polyMask.sniffContent(out);
+        if (lang) {
+          const r = await this.polyMask.maskRaw(out, lang, store);
+          if (r.n > 0) {
+            out = r.out;
+            masked += r.n;
+          }
         }
       }
     } catch {

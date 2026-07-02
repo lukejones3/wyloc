@@ -1,0 +1,33 @@
+{
+  "name": "@wyloc/poly-masker",
+  "version": "0.1.0",
+  "description": "tree-sitter-based, semantic-preserving identifier masking for Go/Java/C#/Kotlin/Python for prompt-time DLP. One parsing layer (web-tree-sitter, in-process WASM), per-language import/package classification, byte-span rewrite, shared session map + rehydration. The multi-language sibling of @wyloc/code-masker (TS/JS, which stays on the TypeScript Compiler API).",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@wyloc/code-masker": "*",
+    "@wyloc/detector": "*",
+    "tree-sitter-wasms": "0.1.13",
+    "web-tree-sitter": "0.25.6"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx test/run.ts",
+    "test:watch": "tsx --watch test/run.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.2"
+  }
+}

@@ -14,6 +14,7 @@ import { forward, sendGatewayError, type ProxyContext } from "./proxy.js";
 import { SessionStore } from "./session.js";
 import { SqlMaskHandle } from "./sql-mask.js";
 import { CodeMaskHandle } from "./code-mask.js";
+import { PolyMaskHandle } from "./poly-mask.js";
 import { FileReadMaskHandle } from "./mask-file-reads.js";
 import { EnvMaskHandle } from "./env-mask.js";
 import { MaskCache } from "./mask-cache.js";
@@ -81,9 +82,17 @@ export function createGateway(config: GatewayConfig): Server {
     );
   }
 
+  // Optional multi-language code masking (off unless `languages` is set in
+  // wyloc.json / WYLOC_MASK_LANGUAGES). Lazy WASM grammars, in-process —
+  // nothing to fail to start.
+  const polyMask = new PolyMaskHandle(config, store, log);
+  if (polyMask.enabled) {
+    log.info(`Poly code masking enabled (languages: ${config.maskLanguages.join(", ")})`);
+  }
+
   // File-read masking (on by default): masks the text of tool results — the
-  // files the agent reads on its own — reusing the SQL/code handles + detector.
-  const fileReadMask = new FileReadMaskHandle(config, sqlMask, codeMask, log);
+  // files the agent reads on its own — reusing the SQL/code/poly handles + detector.
+  const fileReadMask = new FileReadMaskHandle(config, sqlMask, codeMask, log, polyMask);
   if (config.maskFileReads) {
     log.info("File-read masking enabled (raw tool-result file bodies: detector always, SQL/code/env per toggle)");
   }
@@ -151,6 +160,7 @@ export function createGateway(config: GatewayConfig): Server {
       upstreamBaseUrl,
       sqlMask: config.maskSql ? sqlMask : null,
       codeMask: config.maskCode ? codeMask : null,
+      polyMask: polyMask.enabled ? polyMask : null,
       fileReadMask: config.maskFileReads ? fileReadMask : null,
       envMask: config.maskEnv ? envMask : null,
       detectorCache,

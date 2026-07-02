@@ -58,6 +58,10 @@ export interface LoadedWylocConfig {
   internalTlds: string[];
   /** Substrings for the sql/code masker literal passes (blocklist). */
   blocklistSubstrings: string[];
+  /** Poly-masker languages (undefined = key absent, keep env behavior). */
+  languages: string[] | undefined;
+  /** Poly-masker per-language internal prefixes. */
+  internalPackagePrefixes: Partial<Record<string, string[]>>;
   /** Policy toggles actually present in the file (undefined = not set). */
   policy: {
     sql?: boolean; code?: boolean; fileReads?: boolean; members?: boolean;
@@ -145,6 +149,8 @@ export function loadWylocConfig(path: string = wylocConfigPath()): LoadedWylocCo
     internalDomains,
     internalTlds: config.internalTlds ?? [],
     blocklistSubstrings: blocklist,
+    languages: config.languages,
+    internalPackagePrefixes: config.internalPackagePrefixes ?? {},
     policy: {
       ...(config.policy?.sql !== undefined ? { sql: config.policy.sql } : {}),
       ...(config.policy?.code !== undefined ? { code: config.policy.code } : {}),

@@ -72,6 +72,20 @@ export interface WylocConfig {
   internalTlds?: string[];
   /** Literal proprietary terms masked everywhere. */
   blocklist?: string[];
+  /**
+   * Languages the poly-masker masks (Go/Java/C#/Kotlin/Python). A company
+   * lists only the languages it uses; each grammar loads lazily. TS/JS are
+   * governed by policy.code, not this list.
+   */
+  languages?: string[];
+  /**
+   * Per-language internal package/module prefixes — the classification signal
+   * for internal-vs-external, the analog of internalScopes:
+   *   { "go": ["github.com/acme/billing"], "java": ["com.acme."],
+   *     "csharp": ["Acme."], "kotlin": ["com.acme."], "python": ["acme_billing"] }
+   * Manifest auto-discovery (go.mod, …) merges in additional prefixes.
+   */
+  internalPackagePrefixes?: Partial<Record<"go" | "java" | "csharp" | "kotlin" | "python", string[]>>;
   /** Which masking categories are on/off. */
   policy?: {
     sql?: boolean;
@@ -90,8 +104,11 @@ export interface WylocConfig {
 /** Known top-level keys, for unknown-key (typo) rejection. */
 export const WYLOC_TOP_LEVEL_KEYS = [
   "version", "patterns", "internalScopes", "internalDomains", "internalHosts",
-  "internalTlds", "blocklist", "policy", "logging",
+  "internalTlds", "blocklist", "languages", "internalPackagePrefixes", "policy", "logging",
 ] as const;
+
+/** Languages accepted in `languages` / `internalPackagePrefixes`. */
+export const POLY_LANGUAGES = ["go", "java", "csharp", "kotlin", "python"] as const;
 
 /** Known keys on a pattern object, for unknown-key rejection. */
 export const PATTERN_KEYS = ["name", "id", "action", "match", "examples"] as const;

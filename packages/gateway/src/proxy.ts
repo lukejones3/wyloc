@@ -24,6 +24,7 @@ import type { Logger } from "./logger.js";
 import type { SessionStore } from "./session.js";
 import type { SqlMaskHandle } from "./sql-mask.js";
 import type { CodeMaskHandle } from "./code-mask.js";
+import type { PolyMaskHandle } from "./poly-mask.js";
 import type { FileReadMaskHandle } from "./mask-file-reads.js";
 import type { EnvMaskHandle } from "./env-mask.js";
 import type { MaskCache } from "./mask-cache.js";
@@ -64,6 +65,13 @@ export interface ProxyContext {
    */
   codeMask: CodeMaskHandle | null;
   /**
+   * Optional multi-language (Go/Java/C#/Kotlin/Python) code-masking handle.
+   * When present, proprietary identifiers in fenced blocks of the enabled
+   * languages are masked before the detector swap. Null when `languages` is
+   * empty. Pure in-process (lazy WASM grammars, no worker).
+   */
+  polyMask: PolyMaskHandle | null;
+  /**
    * Optional file-read masking handle. When present and enabled, the text of
    * tool results (files the agent read) is masked — detector always, SQL/code
    * per their toggles — before the message-text detector swap. Null when
@@ -89,7 +97,7 @@ export async function forward(
   res: ServerResponse,
   ctx: ProxyContext,
 ): Promise<void> {
-  const { config, log, path, store, inspect, sqlMask, codeMask, fileReadMask, envMask, detectorCache, adapter, upstreamBaseUrl } = ctx;
+  const { config, log, path, store, inspect, sqlMask, codeMask, polyMask, fileReadMask, envMask, detectorCache, adapter, upstreamBaseUrl } = ctx;
   const started = Date.now();
   let maskMs = 0; // time spent in request masking (separate from upstream latency)
 
@@ -120,6 +128,10 @@ export async function forward(
       if (codeMask) {
         const r = await codeMask.applyToParsed(adapter, parsed, store);
         if (r.blocks > 0) { mutated = true; log.debug(`code-mask: ${r.blocks} TS/JS block(s), ${r.masked} masked in ${path}`); }
+      }
+      if (polyMask) {
+        const r = await polyMask.applyToParsed(adapter, parsed, store);
+        if (r.blocks > 0) { mutated = true; log.debug(`poly-mask: ${r.blocks} code block(s), ${r.masked} masked in ${path}`); }
       }
       if (envMask) {
         const r = await envMask.applyToParsed(adapter, parsed, store);
