@@ -2,7 +2,7 @@ import type { Node } from "web-tree-sitter";
 import type { MaskKind } from "@wyloc/code-masker";
 
 /** Languages this masker can handle. TS/JS stay in @wyloc/code-masker. */
-export type LanguageId = "go" | "java" | "csharp" | "kotlin" | "python" | "cobol";
+export type LanguageId = "go" | "java" | "csharp" | "kotlin" | "python" | "cobol" | "rust";
 
 export const LANGUAGE_IDS: readonly LanguageId[] = [
   "go",
@@ -11,6 +11,7 @@ export const LANGUAGE_IDS: readonly LanguageId[] = [
   "kotlin",
   "python",
   "cobol",
+  "rust",
 ] as const;
 
 /** A byte range [start, end) in the source text. */

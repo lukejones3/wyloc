@@ -15,6 +15,7 @@ import { APP_CSHARP, SIBLING_CS, EXTERNAL_ONLY_CSHARP, CSHARP_PREFIXES } from ".
 import { APP_KOTLIN, EXTERNAL_ONLY_KOTLIN, KOTLIN_PREFIXES } from "./fixtures/kotlin.js";
 import { APP_PY, EXTERNAL_ONLY_PY, PYTHON_PREFIXES } from "./fixtures/python.js";
 import { APP_COBOL, VLEDGREC_CPY, EXTERNAL_ONLY_COBOL, FREE_FORMAT_COBOL, OVERFLOW_COBOL } from "./fixtures/cobol.js";
+import { APP_RUST, EXTERNAL_ONLY_RUST, RUST_PREFIXES } from "./fixtures/rust.js";
 
 let passed = 0;
 let failed = 0;
@@ -855,6 +856,116 @@ async function main(): Promise<void> {
       threw = e instanceof PolyMaskError;
     }
     check(`${g} column-1 free format degrades via PolyMaskError (documented)`, threw);
+  }
+
+  // ====================================================================
+  // PHASE 2 — MASKING (Rust)
+  // ====================================================================
+  console.log("══ Phase 2: masking (rust) ═══════════════════════════════");
+  const rustMasker = () =>
+    PolyMasker.create({ languages: ["rust"], internalPackagePrefixes: { rust: [...RUST_PREFIXES] } });
+  const rustParseErrors = async (code: string) => {
+    const parser = await parserFor("rust");
+    const tree = parser.parse(code);
+    return tree ? countParseErrors(tree.rootNode) : Infinity;
+  };
+
+  // ---- Primary fixture: APP_RUST ----
+  {
+    const r = await rustMasker().mask(APP_RUST, "rust");
+    const m = r.masked;
+    const g = "[rust/app]";
+    const kindOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.kind;
+    const maskOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.mask;
+
+    // (a) declarations + use bindings classified
+    check(`${g} InvoiceReconciler -> class`, kindOf("InvoiceReconciler") === "class");
+    check(`${g} ReconcileOutcome -> enum`, kindOf("ReconcileOutcome") === "enum");
+    check(`${g} Retryable -> interface`, kindOf("Retryable") === "interface");
+    check(`${g} BatchSummaries -> type`, kindOf("BatchSummaries") === "type");
+    check(`${g} mod dunning -> namespace`, kindOf("dunning") === "namespace");
+    check(`${g} reconcile_batch -> function`, kindOf("reconcile_batch") === "function");
+    check(`${g} voltra_audit (macro) -> function`, kindOf("voltra_audit") === "function");
+    check(`${g} LedgerClient (crate::) -> import`, kindOf("LedgerClient") === "import");
+    check(`${g} FxRateProvider + RateWindow (use list) -> import`,
+      kindOf("FxRateProvider") === "import" && kindOf("RateWindow") === "import");
+    check(`${g} Sink (as-alias) -> import`, kindOf("Sink") === "import");
+
+    // (b) internal identity gone from CODE; the one mention inside a macro
+    // STRING survives by design (macro conservatism — it's literal text).
+    for (const real of ["ReconcileOutcome", "Retryable", "BatchSummaries", "reconcile_batch", "LedgerClient", "FxRateProvider", "RateWindow"]) {
+      check(`${g} "${real}" absent`, !wordPresent(m, real));
+    }
+    check(`${g} InvoiceReconciler only survives inside the macro string`,
+      wordCount(m, "InvoiceReconciler") === 1 && m.includes("InvoiceReconciler pending"),
+      `count=${wordCount(m, "InvoiceReconciler")}`);
+    check(`${g} internal use paths rewritten`, !m.includes("crate::ledger") && !m.includes("crate::fx") && /use crate::mod_[a-z0-9]+::Import_[a-z0-9]+;/.test(m));
+
+    // (c) MACRO CONSERVATISM (the Tier-2 rule)
+    // - the macro's own name renamed at definition AND call site
+    const macroMask = maskOf("voltra_audit")!;
+    check(`${g} macro_rules! name renamed`, m.includes(`macro_rules! ${macroMask}`));
+    check(`${g} macro call site renamed`, m.includes(`${macroMask}!(batch_id)`));
+    // - the argument INSIDE the bang untouched (token_tree)
+    check(`${g} token-tree arg untouched`, m.includes("!(batch_id)"));
+    // - a target name inside a println! STRING untouched (it's literal text)
+    check(`${g} name inside macro string untouched`, m.includes("InvoiceReconciler pending"));
+    // - derive attribute untouched
+    check(`${g} #[derive(...)] untouched`, m.includes("#[derive(Debug, Serialize, Deserialize)]"));
+
+    // (d) NEVER-touch: std + external crates (make-or-break)
+    for (const ext of ["HashMap", "Duration", "Serialize", "Deserialize", "sleep", "String", "default", "println"]) {
+      check(`${g} external "${ext}" still present`, wordPresent(m, ext));
+    }
+    check(`${g} external uses byte-intact`,
+      m.includes("use std::collections::HashMap;") && m.includes("use serde::{Deserialize, Serialize};") && m.includes("use tokio::time::sleep;"));
+
+    // (e) members untouched (impl methods, fields, enum variants)
+    for (const member of ["summarize", "open_entries", "lookup", "record", "matched", "failed", "currency", "Matched", "Failed", "retry"]) {
+      check(`${g} member "${member}" untouched`, wordPresent(m, member));
+    }
+
+    // (f) strings / secret / comments
+    check(`${g} internal host masked`, !m.includes("ledger.internal.voltra.io"));
+    check(`${g} AWS key swapped`, !m.includes("AKIA5XQ2WJ8NPLR3MKVT"));
+    check(`${g} doc + line comments gone`, !m.includes("Proprietary") && !m.includes("payments-core") && !m.includes("members untouched:"));
+
+    // (g) validity + determinism + idempotency
+    check(`${g} output re-parses clean`, (await rustParseErrors(m)) === 0);
+    check(`${g} deterministic`, (await rustMasker().mask(APP_RUST, "rust")).masked === m);
+    const r3 = await rustMasker().mask(m, "rust");
+    for (const { mock } of r.swappedSecrets) {
+      check(`${g} idempotent: ${mock.slice(0, 22)}… survives`, r3.masked.includes(mock));
+    }
+    check(`${g} idempotent: no new secret swap`, r3.swappedSecrets.length === 0);
+
+    // (h) rehydration round-trip incl. invented identifiers
+    const reconciler = maskOf("InvoiceReconciler")!;
+    const reply = `Wrap ${reconciler} in an Arc; a ${reconciler}Pool and try_reconcile() would help.`;
+    const out = rehydrate(reply, r.session);
+    check(`${g} mask reversed`, out.includes("Wrap InvoiceReconciler in an Arc"));
+    check(`${g} embedded mask NOT reversed`, out.includes(`${reconciler}Pool`));
+    check(`${g} invented name passes through`, out.includes("try_reconcile"));
+    const round = rehydrate(m, r.session);
+    for (const real of ["InvoiceReconciler", "crate::ledger", "voltra_audit!(batch_id)", "ledger.internal.voltra.io", "AKIA5XQ2WJ8NPLR3MKVT"]) {
+      check(`${g} round-trip restores ${JSON.stringify(real)}`, round.includes(real));
+    }
+  }
+
+  // ---- NEGATIVE fixture: EXTERNAL_ONLY_RUST ----
+  {
+    const r = await rustMasker().mask(EXTERNAL_ONLY_RUST, "rust");
+    const g = "[rust/external-only]";
+    check(`${g} zero identifiers masked`, r.maskedIdentifiers.length === 0,
+      `masked: ${r.maskedIdentifiers.map((x) => x.real).join(", ")}`);
+    check(`${g} zero module specifiers masked`, r.maskedModuleSpecifiers.length === 0);
+    check(`${g} zero strings masked`, r.maskedStrings.length === 0);
+    check(`${g} zero secrets`, r.swappedSecrets.length === 0);
+    check(`${g} fn main kept (entrypoint)`, r.masked.includes("fn main()"));
+    for (const ext of ["HashMap", "Duration", "from_secs", "unwrap_or_default", "println"]) {
+      check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
+    }
+    check(`${g} output re-parses clean`, (await rustParseErrors(r.masked)) === 0);
   }
 
   // ====================================================================

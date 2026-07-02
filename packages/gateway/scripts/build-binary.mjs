@@ -210,7 +210,7 @@ async function main() {
   const wasmOut = join(out, "runtime", "wasm");
   mkdirSync(wasmOut, { recursive: true });
   const tsWasms = join(REPO, "node_modules", "tree-sitter-wasms", "out");
-  for (const g of ["go", "java", "c_sharp", "kotlin", "python"]) {
+  for (const g of ["go", "java", "c_sharp", "kotlin", "python", "rust"]) {
     cpSync(join(tsWasms, `tree-sitter-${g}.wasm`), join(wasmOut, `tree-sitter-${g}.wasm`));
   }
   cpSync(

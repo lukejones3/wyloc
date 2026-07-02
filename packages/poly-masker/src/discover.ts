@@ -36,7 +36,17 @@ export function discoverInternalPrefixes(
   const pyPackage = readPyprojectName(join(projectRoot, "pyproject.toml"));
   if (pyPackage) found.python = [pyPackage];
 
+  const crateName = readCargoName(join(projectRoot, "Cargo.toml"));
+  if (crateName) found.rust = [crateName];
+
   return found;
+}
+
+/** Cargo.toml [package] name, normalized to the in-code crate form (a-b → a_b). */
+function readCargoName(path: string): string | null {
+  const text = readTextIfExists(path);
+  const name = text?.match(/^\s*name\s*=\s*["']([\w.-]+)["']/m)?.[1];
+  return name ? name.replace(/-/g, "_") : null;
 }
 
 /** The `module <path>` line of a go.mod, if present and well-formed. */

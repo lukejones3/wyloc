@@ -270,6 +270,46 @@ const cobolFileReadRequest = {
   stream: true,
 };
 
+const RUST_FILE = [
+  "//! Voltra billing — reconciliation. Proprietary.",
+  "use std::collections::HashMap;",
+  "use serde::Serialize;",
+  "",
+  "use crate::ledger::LedgerClient;",
+  "",
+  "#[derive(Serialize)]",
+  "pub struct InvoiceReconciler {",
+  "    matched: u64,",
+  "}",
+  "",
+  "pub fn reconcile_batch(client: &LedgerClient, ids: &[String]) -> InvoiceReconciler {",
+  "    let mut totals: HashMap<String, u64> = HashMap::new();",
+  "    for id in ids {",
+  "        client.post_entry(id);",
+  "        *totals.entry(id.clone()).or_insert(0) += 1;",
+  "    }",
+  '    println!("posted {} entries", totals.len());',
+  "    InvoiceReconciler { matched: totals.len() as u64 }",
+  "}",
+].join("\n");
+
+const rustFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the rust reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_7", name: "Read", input: { path: "reconciler.rs" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_7", content: [{ type: "text", text: RUST_FILE }] }],
+    },
+  ],
+  stream: true,
+};
+
 const fencedRequest = {
   model: "claude-opus-4-8",
   max_tokens: 64,
@@ -405,7 +445,7 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go", "java", "csharp", "kotlin", "python", "cobol"],
+      languages: ["go", "java", "csharp", "kotlin", "python", "cobol", "rust"],
       internalPackagePrefixes: {
         go: ["github.com/voltra/billing-core"],
         java: ["com.voltra."],
@@ -516,6 +556,20 @@ async function main() {
   assert(/\bPERFORM\b|\bDISPLAY\b/.test(cblText) && /\bADD\b/.test(cblText), "[cobol] verbs untouched");
   const cblLines = cblText.split("\n");
   assert(cblLines.every((l) => l.includes("WYLOC_MOCK_") || l.length <= 72), "[cobol] column alignment: no identifier line crosses col 72");
+
+  console.error("\n── Poly-masking (Rust): use-path + macro guard ──────");
+  captured = null;
+  await post(rustFileReadRequest);
+  assert(captured !== null, "[rust] upstream received the request");
+  const rsText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\bInvoiceReconciler\b/.test(rsText), "[rust] struct masked out");
+  assert(!/\breconcile_batch\b/.test(rsText), "[rust] function masked out");
+  assert(!rsText.includes("crate::ledger"), "[rust] internal use path masked out");
+  assert(!rsText.includes("Proprietary"), "[rust] doc comment stripped");
+  assert(rsText.includes("use std::collections::HashMap;") && rsText.includes("use serde::Serialize;"), "[rust] external uses byte-intact");
+  assert(rsText.includes("#[derive(Serialize)]"), "[rust] derive attribute untouched (macro conservatism)");
+  assert(rsText.includes('println!("posted {} entries", totals.len())'), "[rust] macro invocation contents untouched");
+  assert(/\bpost_entry\b/.test(rsText), "[rust] method untouched (members off)");
 
   gateway.kill("SIGTERM");
   upstream.close();
