@@ -3,6 +3,7 @@ import { SessionMap, maskStringValue, rehydrate } from "@wyloc/code-masker";
 import { resolveConfig, type PolyMaskerConfig, type PolyMaskerConfigInput } from "./config.js";
 import { shortHash } from "./hash.js";
 import { analyzeGo } from "./languages/go.js";
+import { analyzeJava } from "./languages/java.js";
 import { parserFor } from "./parsers.js";
 import { countParseErrors } from "./tree.js";
 import type { Analyzer, AnalyzerCtx, IdentifierKind, LanguageId, MaskKind, Span } from "./types.js";
@@ -27,6 +28,7 @@ export class PolyMaskError extends Error {
 
 const ANALYZERS: Partial<Record<LanguageId, Analyzer>> = {
   go: analyzeGo,
+  java: analyzeJava,
 };
 
 /** Languages with an implemented analyzer (config may enable fewer). */

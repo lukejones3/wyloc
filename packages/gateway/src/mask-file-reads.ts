@@ -125,22 +125,22 @@ export class FileReadMaskHandle {
           out = r.out;
           masked += r.n;
         }
+      } else if (this.polyMask?.enabled && this.polyMask.sniffContent(out) !== null) {
+        // Go/Java/C#/Kotlin/Python — checked BEFORE the TS/JS branch because
+        // the poly sniffs are high-specificity (package/namespace markers the
+        // TS sniff lacks) while looksLikeCode() is loose (`class Foo` matches
+        // Java too); the loose sniff must not steal files the strict one owns.
+        const lang = this.polyMask.sniffContent(out)!;
+        const r = await this.polyMask.maskRaw(out, lang, store);
+        if (r.n > 0) {
+          out = r.out;
+          masked += r.n;
+        }
       } else if (this.config.maskCode && this.codeMask && looksLikeCode(out)) {
         const r = this.codeMask.maskRaw(out, codeFileName(out), store);
         if (r.n > 0) {
           out = r.out;
           masked += r.n;
-        }
-      } else if (this.polyMask?.enabled) {
-        // Go/Java/C#/Kotlin/Python — per-language sniffs are stricter than the
-        // TS one above, and adopt-only-if-masked still protects a misroute.
-        const lang = this.polyMask.sniffContent(out);
-        if (lang) {
-          const r = await this.polyMask.maskRaw(out, lang, store);
-          if (r.n > 0) {
-            out = r.out;
-            masked += r.n;
-          }
         }
       }
     } catch {

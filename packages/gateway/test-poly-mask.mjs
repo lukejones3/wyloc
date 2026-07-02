@@ -12,6 +12,11 @@
  *
  *   2. FILE-READ PATH: a tool_result whose text is a RAW Go file (no fence).
  *      The content-router must sniff it as Go and mask it the same way.
+ *
+ *   3. SNIFF PRECEDENCE (Java vs TS): with policy.code (TS/JS) ON, a RAW Java
+ *      file must still route to the poly-masker (`package x.y;` sniff), not be
+ *      parsed as TypeScript by the loose looksLikeCode() sniff — internal
+ *      names masked, slf4j/Spring untouched.
  */
 
 import { fileURLToPath } from "node:url";
@@ -57,6 +62,50 @@ const GO_FILE = [
   "\t})",
   "}",
 ].join("\n");
+
+const JAVA_FILE = [
+  "// Voltra billing — reconciliation service. Proprietary.",
+  "package com.voltra.billing;",
+  "",
+  "import java.util.List;",
+  "import org.slf4j.Logger;",
+  "import org.slf4j.LoggerFactory;",
+  "import com.voltra.ledger.LedgerClient;",
+  "",
+  "public class InvoiceReconciler {",
+  "    private static final Logger log = LoggerFactory.getLogger(InvoiceReconciler.class);",
+  "    private final LedgerClient ledgerClient;",
+  "",
+  "    public InvoiceReconciler(LedgerClient ledgerClient) {",
+  "        this.ledgerClient = ledgerClient;",
+  "    }",
+  "",
+  "    public int reconcile(List<String> batchIds) {",
+  "        for (String id : batchIds) {",
+  "            ledgerClient.postEntry(id);",
+  "        }",
+  "        log.info(\"posted {} entries\", batchIds.size());",
+  "        return batchIds.size();",
+  "    }",
+  "}",
+].join("\n");
+
+const javaFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the java reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_2", name: "Read", input: { path: "InvoiceReconciler.java" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_2", content: [{ type: "text", text: JAVA_FILE }] }],
+    },
+  ],
+  stream: true,
+};
 
 const fencedRequest = {
   model: "claude-opus-4-8",
@@ -192,8 +241,13 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go"],
-      internalPackagePrefixes: { go: ["github.com/voltra/billing-core"] },
+      languages: ["go", "java"],
+      internalPackagePrefixes: {
+        go: ["github.com/voltra/billing-core"],
+        java: ["com.voltra."],
+      },
+      // TS/JS masking ON — scenario 3 proves Java still routes to poly.
+      policy: { code: true },
     }),
   );
 
@@ -224,6 +278,21 @@ async function main() {
   const parsed = JSON.parse(captured);
   const toolResult = parsed.messages[2].content[0];
   assert(toolResult.type === "tool_result" && toolResult.tool_use_id === "tu_1", "[file-read] tool-call envelope untouched");
+
+  console.error("\n── Poly-masking (Java): sniff precedence over TS/JS ─");
+  captured = null;
+  await post(javaFileReadRequest);
+  assert(captured !== null, "[java] upstream received the request");
+  // Assert on the tool_result TEXT: the tool_use ARGUMENTS ({path: "InvoiceReconciler.java"})
+  // are structure and deliberately untouched.
+  const javaText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\bInvoiceReconciler\b/.test(javaText), "[java] class 'InvoiceReconciler' masked out");
+  assert(!captured.includes("com.voltra"), "[java] internal package paths masked out");
+  assert(!captured.includes("Proprietary"), "[java] comment stripped");
+  assert(captured.includes("import org.slf4j.Logger;"), "[java] slf4j import byte-intact (not TS-mangled)");
+  assert(/\bLoggerFactory\b/.test(captured), "[java] external 'LoggerFactory' preserved");
+  assert(captured.includes("package masked.mod_"), "[java] package declaration masked, Java syntax kept");
+  assert(/\breconcile\b/.test(captured), "[java] method 'reconcile' untouched (members off)");
 
   gateway.kill("SIGTERM");
   upstream.close();

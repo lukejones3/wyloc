@@ -32,6 +32,14 @@ export function spanOf(node: Node): Span {
   return { start: node.startIndex, end: node.endIndex };
 }
 
+/** Whether any ancestor (not `node` itself) has a type in `types`. */
+export function hasAncestor(node: Node, types: readonly string[]): boolean {
+  for (let p = node.parent; p; p = p.parent) {
+    if (types.includes(p.type)) return true;
+  }
+  return false;
+}
+
 /**
  * The content span of a quoted string literal node: the node span minus the
  * quote characters actually present in the source (works for ", ', `, and
