@@ -4,6 +4,7 @@ import { resolveConfig, type PolyMaskerConfig, type PolyMaskerConfigInput } from
 import { shortHash } from "./hash.js";
 import { analyzeC } from "./languages/c.js";
 import { analyzeCobol } from "./languages/cobol.js";
+import { analyzeCpp } from "./languages/cpp.js";
 import { analyzeCSharp } from "./languages/csharp.js";
 import { analyzeGo } from "./languages/go.js";
 import { analyzeJava } from "./languages/java.js";
@@ -41,6 +42,7 @@ const ANALYZERS: Partial<Record<LanguageId, Analyzer>> = {
   cobol: analyzeCobol,
   rust: analyzeRust,
   c: analyzeC,
+  cpp: analyzeCpp,
 };
 
 /** Languages with an implemented analyzer (config may enable fewer). */

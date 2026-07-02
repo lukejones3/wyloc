@@ -63,13 +63,18 @@ const FENCE_LANG: Record<string, LanguageId> = {
   cob: "cobol",
   rust: "rust",
   rs: "rust",
+  cpp: "cpp",
+  "c++": "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
   c: "c",
   h: "c",
 };
 
 // NOTE: bare `c` must stay LAST in the alternation (it would otherwise
-// shadow cobol/csharp/cs as a prefix match).
-const FENCE = /```(go|golang|java|kotlin|kts?|csharp|cs|c#|python|py|cobol|cbl|cob|rust|rs|h|c)\b[ \t]*\r?\n([\s\S]*?)```/gi;
+// shadow cobol/csharp/cs/cpp/cc/cxx as a prefix match).
+const FENCE = /```(go|golang|java|kotlin|kts?|csharp|cs|c#|python|py|cobol|cbl|cob|rust|rs|cpp|c\+\+|cc|cxx|hpp|h|c)\b[ \t]*\r?\n([\s\S]*?)```/gi;
 
 /**
  * High-specificity per-language sniffs for RAW file content. Deliberately
@@ -105,8 +110,16 @@ const SNIFFS: [LanguageId, (s: string) => boolean][] = [
     "rust",
     (s) => /(^|\n)use\s+[\w:]+::[\w:{}, *]+;/.test(s) && /\bfn\s+\w+/.test(s),
   ],
+  // C++: #include plus unmistakable C++ markers — MUST run before the C
+  // sniff (which explicitly rejects these markers).
+  [
+    "cpp",
+    (s) =>
+      /(^|\n)#include\s+[<"]/.test(s) &&
+      /\b(namespace|template)\s|std::|#include\s+<(iostream|vector|string|map|memory)>|\bclass\s+[A-Z]/.test(s),
+  ],
   // C: #include lines WITHOUT any C++ markers (namespace/template/class/
-  // std:: / C++ headers) — the C++ sniff will claim those files instead.
+  // std:: / C++ headers) — the C++ sniff above claims those files instead.
   [
     "c",
     (s) =>

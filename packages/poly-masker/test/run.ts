@@ -17,6 +17,7 @@ import { APP_PY, EXTERNAL_ONLY_PY, PYTHON_PREFIXES } from "./fixtures/python.js"
 import { APP_COBOL, VLEDGREC_CPY, EXTERNAL_ONLY_COBOL, FREE_FORMAT_COBOL, OVERFLOW_COBOL } from "./fixtures/cobol.js";
 import { APP_RUST, EXTERNAL_ONLY_RUST, RUST_PREFIXES } from "./fixtures/rust.js";
 import { APP_C, VOLTRA_LEDGER_H, EXTERNAL_ONLY_C } from "./fixtures/c.js";
+import { APP_CPP, VOLTRA_LEDGER_HPP, EXTERNAL_ONLY_CPP, CPP_PREFIXES } from "./fixtures/cpp.js";
 
 let passed = 0;
 let failed = 0;
@@ -1087,6 +1088,119 @@ async function main(): Promise<void> {
       check(`${g} "${ext}" untouched`, wordPresent(r.masked, ext));
     }
     check(`${g} output re-parses clean`, (await cParseErrors(r.masked)) === 0);
+  }
+
+  // ====================================================================
+  // PHASE 2 — MASKING (C++)
+  // ====================================================================
+  console.log("══ Phase 2: masking (cpp) ════════════════════════════════");
+  const cppMasker = () =>
+    PolyMasker.create({ languages: ["cpp"], internalPackagePrefixes: { cpp: [...CPP_PREFIXES] } });
+  const cppParseErrors = async (code: string) => {
+    const parser = await parserFor("cpp");
+    const tree = parser.parse(code);
+    return tree ? countParseErrors(tree.rootNode) : Infinity;
+  };
+
+  // ---- Primary fixture: APP_CPP ----
+  {
+    const r = await cppMasker().mask(APP_CPP, "cpp");
+    const m = r.masked;
+    const g = "[cpp/app]";
+    const kindOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.kind;
+    const maskOf = (real: string) => r.maskedIdentifiers.find((x) => x.real === real)?.mask;
+
+    // (a) declarations + namespace classified
+    check(`${g} InvoiceReconciler -> class`, kindOf("InvoiceReconciler") === "class");
+    check(`${g} ReconcileResult -> class`, kindOf("ReconcileResult") === "class");
+    check(`${g} BatchSummaries (alias) -> type`, kindOf("BatchSummaries") === "type");
+    check(`${g} run_batch -> function`, kindOf("run_batch") === "function");
+    check(`${g} namespace masked (config-gated)`, !m.includes("namespace voltra::billing") && /namespace masked_ns_[a-z0-9]+/.test(m));
+
+    // (b) internal identity gone; local include masked; FQ ref rewritten
+    for (const real of ["InvoiceReconciler", "ReconcileResult", "BatchSummaries", "run_batch"]) {
+      check(`${g} "${real}" absent`, !wordPresent(m, real));
+    }
+    check(`${g} local include path masked`, !m.includes("voltra/ledger_client.hpp") && /#include "masked_mod_[a-z0-9]+\.hpp"/.test(m));
+    check(`${g} fully-qualified internal ref rewritten`, !m.includes("voltra::billing::InvoiceReconciler") && /masked_ns_[a-z0-9]+::Class_[a-z0-9]+/.test(m));
+
+    // (c) CONSERVATISM: preprocessor + templates + members
+    check(`${g} #define VOLTRA_AUDIT untouched`, m.includes("#define VOLTRA_AUDIT(msg)"));
+    check(`${g} macro call site untouched`, m.includes('VOLTRA_AUDIT("batch start")'));
+    check(`${g} template parameter untouched`, m.includes("template <typename Range>"));
+    // members: methods (incl. out-of-class definition), fields
+    for (const member of ["summarize", "reconcile", "post_entry", "client_", "matched", "failed", "currency"]) {
+      check(`${g} member "${member}" untouched`, wordPresent(m, member));
+    }
+    // snippet path: header class unresolvable without index — left alone
+    check(`${g} header class left alone (no index)`, wordPresent(m, "LedgerClient"));
+
+    // (d) NEVER-touch: std / system (make-or-break)
+    for (const ext of ["std::map", "std::string", "std::vector", "std::shared_ptr", "std::move", "std::make_shared", "std::fprintf", "static_cast"]) {
+      check(`${g} external "${ext}" still present`, m.includes(ext));
+    }
+    check(`${g} system includes byte-intact`, m.includes("#include <map>") && m.includes("#include <memory>"));
+
+    // (e) strings / secret / comments
+    check(`${g} internal host masked`, !m.includes("ledger.internal.voltra.io"));
+    check(`${g} AWS key swapped`, !m.includes("AKIA5XQ2WJ8NPLR3MKVT"));
+    check(`${g} comments gone`, !m.includes("Proprietary") && !m.includes("payments-core") && !m.includes("MEMBER, stays untouched"));
+
+    // (f) validity + determinism + idempotency
+    check(`${g} output re-parses clean`, (await cppParseErrors(m)) === 0);
+    check(`${g} deterministic`, (await cppMasker().mask(APP_CPP, "cpp")).masked === m);
+    const r3 = await cppMasker().mask(m, "cpp");
+    for (const { mock } of r.swappedSecrets) {
+      check(`${g} idempotent: ${mock.slice(0, 22)}… survives`, r3.masked.includes(mock));
+    }
+    check(`${g} idempotent: no new secret swap`, r3.swappedSecrets.length === 0);
+
+    // (g) rehydration round-trip incl. invented identifiers
+    const reconciler = maskOf("InvoiceReconciler")!;
+    const reply = `Make ${reconciler} movable; add a ${reconciler}Builder and batch_pool().`;
+    const out = rehydrate(reply, r.session);
+    check(`${g} mask reversed`, out.includes("Make InvoiceReconciler movable"));
+    check(`${g} embedded mask NOT reversed`, out.includes(`${reconciler}Builder`));
+    check(`${g} invented name passes through`, out.includes("batch_pool"));
+    const round = rehydrate(m, r.session);
+    for (const real of ["InvoiceReconciler", "namespace voltra::billing", '#include "voltra/ledger_client.hpp"', "ledger.internal.voltra.io", "AKIA5XQ2WJ8NPLR3MKVT"]) {
+      check(`${g} round-trip restores ${JSON.stringify(real)}`, round.includes(real));
+    }
+  }
+
+  // ---- FILE-READ PATH: local .hpp via the project index ----
+  {
+    const g = "[cpp/header-indexed]";
+    const dir = mkdtempSync(join(tmpdir(), "wyloc-cpp-"));
+    try {
+      writeFileSync(join(dir, "ledger_client.hpp"), VOLTRA_LEDGER_HPP);
+      const index = new ProjectIndex(dir);
+      const types = await index.internalTypes("cpp", CPP_PREFIXES);
+      check(`${g} header class indexed`, types.has("LedgerClient"), `indexed: ${[...types].join(", ")}`);
+      const r = await cppMasker().mask(APP_CPP, "cpp", types);
+      check(`${g} LedgerClient now masked`, !wordPresent(r.masked, "LedgerClient"));
+      check(`${g} std types STILL intact with index on`, r.masked.includes("std::shared_ptr") && r.masked.includes("std::vector"));
+      check(`${g} output re-parses clean`, (await cppParseErrors(r.masked)) === 0);
+      check(`${g} round-trip restores LedgerClient`, rehydrate(r.masked, r.session).includes("LedgerClient"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // ---- NEGATIVE fixture: EXTERNAL_ONLY_CPP ----
+  {
+    const r = await cppMasker().mask(EXTERNAL_ONLY_CPP, "cpp");
+    const g = "[cpp/external-only]";
+    check(`${g} zero identifiers masked`, r.maskedIdentifiers.length === 0,
+      `masked: ${r.maskedIdentifiers.map((x) => x.real).join(", ")}`);
+    check(`${g} zero module specifiers masked`, r.maskedModuleSpecifiers.length === 0);
+    check(`${g} zero strings masked`, r.maskedStrings.length === 0);
+    check(`${g} zero secrets`, r.swappedSecrets.length === 0);
+    check(`${g} main kept (entrypoint)`, r.masked.includes("int main()"));
+    for (const ext of ["std::getenv", "std::vector", "std::stringstream", "std::getline", "std::cout", "EXIT_SUCCESS"]) {
+      check(`${g} "${ext}" untouched`, r.masked.includes(ext));
+    }
+    check(`${g} output re-parses clean`, (await cppParseErrors(r.masked)) === 0);
   }
 
   // ====================================================================

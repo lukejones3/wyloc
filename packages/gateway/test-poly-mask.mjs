@@ -356,6 +356,44 @@ const cFileReadRequest = {
   stream: true,
 };
 
+const CPP_FILE = [
+  "// Voltra billing — reconciliation. Proprietary.",
+  "#include <memory>",
+  "#include <vector>",
+  '#include "voltra/ledger_client.hpp"',
+  "",
+  "namespace voltra::billing {",
+  "",
+  "class InvoiceReconciler {",
+  "public:",
+  "    int reconcile(const std::vector<std::string>& ids) {",
+  "        for (const auto& id : ids) client_->post_entry(id);",
+  "        return static_cast<int>(ids.size());",
+  "    }",
+  "private:",
+  "    std::shared_ptr<LedgerClient> client_;",
+  "};",
+  "",
+  "}  // namespace voltra::billing",
+].join("\n");
+
+const cppFileReadRequest = {
+  model: "claude-opus-4-8",
+  max_tokens: 64,
+  messages: [
+    { role: "user", content: "read the cpp reconciler" },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_9", name: "Read", input: { path: "reconciler.cpp" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu_9", content: [{ type: "text", text: CPP_FILE }] }],
+    },
+  ],
+  stream: true,
+};
+
 const fencedRequest = {
   model: "claude-opus-4-8",
   max_tokens: 64,
@@ -491,13 +529,14 @@ async function main() {
     wylocPath,
     JSON.stringify({
       version: 1,
-      languages: ["go", "java", "csharp", "kotlin", "python", "cobol", "rust", "c"],
+      languages: ["go", "java", "csharp", "kotlin", "python", "cobol", "rust", "c", "cpp"],
       internalPackagePrefixes: {
         go: ["github.com/voltra/billing-core"],
         java: ["com.voltra."],
         csharp: ["Voltra."],
         kotlin: ["com.voltra."],
         python: ["voltra_billing"],
+        cpp: ["voltra"],
       },
       // TS/JS masking ON — scenario 3 proves Java still routes to poly.
       policy: { code: true },
@@ -632,6 +671,18 @@ async function main() {
   assert(/\bmemset\b/.test(cText) && /\bprintf\b/.test(cText), "[c] stdlib preserved");
   assert(cText.includes("#define POST_ENTRY(id) ledger_post((id), 1.0)"), "[c] #define untouched (preproc conservatism, beats the index)");
   assert(cText.includes("POST_ENTRY(batch_id)"), "[c] macro call site untouched");
+
+  console.error("\n── Poly-masking (C++): sniff split from C ───────────");
+  captured = null;
+  await post(cppFileReadRequest);
+  assert(captured !== null, "[cpp] upstream received the request");
+  const cppText = JSON.parse(captured).messages[2].content[0].content[0].text;
+  assert(!/\bInvoiceReconciler\b/.test(cppText), "[cpp] class masked out (routed to cpp, not c)");
+  assert(!cppText.includes("namespace voltra::billing"), "[cpp] internal namespace masked out");
+  assert(!cppText.includes("voltra/ledger_client.hpp"), "[cpp] local include path masked out");
+  assert(!cppText.includes("Proprietary"), "[cpp] comment stripped");
+  assert(cppText.includes("#include <memory>") && cppText.includes("std::shared_ptr"), "[cpp] std preserved");
+  assert(/\breconcile\b/.test(cppText) && /\bpost_entry\b/.test(cppText), "[cpp] methods untouched (members off)");
 
   gateway.kill("SIGTERM");
   upstream.close();
