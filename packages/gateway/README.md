@@ -58,8 +58,8 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   A verbatim-echo directive is injected into `system` (toggle:
   `WYLOC_INJECT_SYSTEM_PROMPT`, default on) so mocks round-trip reliably.
 
-- **Phase 4 — SQL identifier masking + literal scrubbing** ✅ (opt-in,
-  `WYLOC_MASK_SQL=true`). Before the detector swap, SQL found in prompt text
+- **Phase 4 — SQL identifier masking + literal scrubbing** ✅ (**on by default**,
+  `WYLOC_MASK_SQL`). Before the detector swap, SQL found in prompt text
   (```sql fences **and** a bare block that parses) is run through
   [`@wyloc/sql-masker`](../sql-masker): proprietary table/schema/column
   identifiers are replaced with semantic-preserving masks
@@ -67,8 +67,9 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   while query-local structure (CTEs, aliases) is preserved so the model still
   gives good advice. The mask pairs fold into the same session store, so the
   response stream rehydrates them alongside `WYLOC_MOCK_` tokens. Needs a
-  Python3 + `sqlglot` worker; if it can't start, the gateway logs once and
-  falls back to detector-only (no request ever fails for this reason).
+  Python3 + `sqlglot` worker — **bundled in the standalone binary** (works out
+  of the box); from source, if it can't start the gateway logs once and falls
+  back to detector-only (no request ever fails for this reason).
 - **Phase 5 — OpenAI / Codex support** ✅. A provider-adapter seam
   (`src/adapters/`) factors the wire-format-specific logic — `AnthropicAdapter`
   (behavior-preserving) and `OpenAIAdapter` — behind one interface; both call
@@ -77,8 +78,8 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   `role:"tool"` and never touches `tool_calls`), appends the directive to the
   system message, and rehydrates `choices[].delta.content` from the
   `chat.completion.chunk` stream. `WYLOC_MASK_SQL` works on both providers.
-- **Phase 6 — TS/JS code identifier masking** ✅ (opt-in,
-  `WYLOC_MASK_CODE=true`). Alongside the SQL pass and before the detector swap,
+- **Phase 6 — TS/JS code identifier masking** ✅ (**on by default**,
+  `WYLOC_MASK_CODE`). Alongside the SQL pass and before the detector swap,
   TS/JS inside fenced code blocks (```ts ```tsx ```js ```jsx …) is run through
   [`@wyloc/code-masker`](../code-masker): internally-defined classes/functions/
   types/imports get semantic-preserving masks (`BillingReconciler → Class_<hash>`),
@@ -86,7 +87,7 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   secrets are swapped — while external/library APIs (React, lodash, Node) and the
   business logic pass through so the model can still help. Mask pairs fold into
   the same session store and rehydrate in the response. Pure in-process (no
-  worker). Works on both providers.
+  worker). Works on both providers. **The other nine languages are Phase 10.**
 - **Phase 7 — file-read masking** ✅ (on by default, `WYLOC_MASK_FILE_READS`).
   The files Claude Code / Codex read on their own arrive as tool-result content
   (Anthropic `tool_result` blocks, OpenAI `role:"tool"` messages) — previously
@@ -126,6 +127,26 @@ The gateway never sees a Wyloc account — it only relays your own credentials.
   env-classification still catches recognized secrets — but the sniff biases
   toward catching env files (over-masking a non-env block is safe; missing a
   real .env is not). Values swap+rehydrate through the shared store/salt.
+
+- **Phase 10 — nine more languages (poly-masker)** ✅ (**common set on by
+  default**, `WYLOC_MASK_LANGUAGES`). The multi-language sibling of the TS/JS
+  masker: [`@wyloc/poly-masker`](../poly-masker) masks
+  **Go · Java · C# · Kotlin · Python · Rust · C · C++ · COBOL** with one
+  parsing layer (tree-sitter, in-process WASM grammars loaded lazily per
+  enabled language). Same job as Phase 6 — internal types/functions/packages,
+  internal import paths, internal URLs/hosts/paths, and hardcoded secrets get
+  masked; stdlib + third-party APIs and business logic pass through; comments
+  stripped — with a byte-span rewrite that **must re-parse clean before it's
+  emitted**. Internal-vs-external is decided per language by the import/package
+  system (`internalPackagePrefixes`, auto-discovered from `go.mod` / `pom.xml` /
+  `build.gradle` / `*.csproj` / `pyproject.toml` / `Cargo.toml`); a project
+  symbol index resolves same-package / C#-usings / copybook names on the
+  file-read path. Both the fenced-block and file-read paths are covered, shares
+  the store/salt, idempotent with the detector. **On by default:** the common
+  eight (`go java csharp kotlin python rust c cpp`). **COBOL is opt-in** (9.5 MB
+  grammar; the binary bundles it and the pinned Node 22 avoids the V8 tier-up
+  OOM, so no re-exec is needed there). See the `languages` config below to
+  narrow, add COBOL (`["defaults","cobol"]`), enable all, or disable.
 
 **Round trip:** paste a secret → the model never sees it (mock upstream) →
 Claude's reply shows your **real** secret (rehydrated inline).

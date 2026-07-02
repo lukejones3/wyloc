@@ -5,7 +5,61 @@ through the gateway, what wire format it speaks, and what that means for
 coverage. The masking engine (detector, SQL, code, `.env`, file-read/tool-result,
 config) is **wire-agnostic and identical across every adapter** — coverage is
 purely a question of *wire format* + *routing*, never of which secrets get
-masked.
+masked. **What that engine masks — the languages and content types — is the
+next section.**
+
+## Languages & content Wyloc masks
+
+The authoritative answer to *"what does Wyloc mask, and what's on by default?"*
+Everything below applies to **both** typed/pasted fenced code blocks **and**
+the files an agent reads (tool-result content) — the same engine, both paths.
+
+**Always on** (not language-specific, cannot be narrowed away):
+
+- **Secrets / credentials** — 80+ types via `@wyloc/detector` (AWS, GitHub,
+  Stripe, OpenAI/Anthropic, DB URLs, JWTs, PEM keys, `.env` assignments, …).
+- **PII** — credit-card + SSN (togglable via `policy.pii`).
+- **`.env` values** — every `KEY=value` value when content sniffs as an env file
+  (`WYLOC_MASK_ENV`, default on).
+
+**Code & query languages** — masks internal/proprietary identity (internal
+types/functions/packages, internal import paths, internal URLs/hosts/paths,
+hardcoded secrets), leaves external/stdlib/library identity and business logic
+untouched, strips comments, and rehydrates the model's reply in-session:
+
+| Language(s) | Masker | Default | Internal-vs-external signal | Verification |
+| --- | --- | --- | --- | --- |
+| **SQL** | `@wyloc/sql-masker` | **on** | query structure (physical tables vs CTEs/aliases), `sqlglot` parse | unit + integration + per-platform binary |
+| **TS / JS** (`ts tsx js jsx mjs cjs`) | `@wyloc/code-masker` | **on** | TypeScript compiler API: imports + scope | unit + integration |
+| **Go, Java, C#, Kotlin, Python, Rust, C, C++** | `@wyloc/poly-masker` | **on** | import/package system + `internalPackagePrefixes` (auto-discovered) + project symbol index | unit + integration + per-platform binary |
+| **COBOL** | `@wyloc/poly-masker` | **opt-in** | DATA DIVISION / paragraph declarations + copybook index; fixed-format column-safe masks | unit + integration + per-platform binary |
+
+The nine poly languages parse with one tree-sitter layer (in-process WASM,
+lazy-loaded per enabled language). **COBOL is opt-in** because its grammar is
+9.5 MB and (under a dev/from-source Node ≥23) needs a `--liftoff-only` re-exec;
+the shipped binary pins Node 22 and bundles the grammar, so it just works when
+enabled. Member/method masking is **off** for all poly languages (on where the
+TS masker can prove type-completeness).
+
+**Configuring which languages are on** — `wyloc.json` `languages`
+(or `WYLOC_MASK_LANGUAGES`). **Omit it for the sensible default** (the common
+eight — COBOL off). When present it is authoritative:
+
+```jsonc
+{ "version": 1, "languages": ["go", "python"] }        // narrow to what you use
+{ "version": 1, "languages": ["defaults", "cobol"] }   // common set + COBOL (future-proof)
+{ "version": 1, "languages": ["all"] }                 // everything incl. COBOL
+{ "version": 1, "languages": ["none"] }                // poly masking off
+```
+
+Unknown ids / keyword typos fail closed with a *did you mean* hint. TS/JS and
+SQL are governed by `policy.code` / `policy.sql` (both default on), not this
+list. **Documented gray zones** (safe failure = under-mask, never mismask):
+COBOL dialect variance (vendor extensions like EXEC CICS/SQL may not parse →
+detector-only); C/C++ under-mask around macros/`#define` (preprocessor identity
+is left alone); packageless-Java / def-less-Python snippets fall to the TS/JS
+sniff or detector-only; non-streaming (whole-JSON) response bodies aren't
+rehydrated — rehydration is streaming-only today.
 
 ## The two make-or-break questions
 

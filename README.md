@@ -51,10 +51,14 @@ packages/
                         Pure logic — runs identically in browser, gateway, and CLI.
   browser-extension/    Chrome / Edge extension (Manifest V3).
                         Universal mode: works on every website.
-  gateway/              Local Anthropic-compatible proxy. Protects terminal AI
-                        tools (e.g. Claude Code) at the wire level — masking
-                        secrets on the request and restoring them on the
-                        streamed response, with no change to the developer's flow.
+  gateway/              Local proxy for terminal AI tools (Claude Code, Codex,
+                        Gemini CLI, Aider, …). Masks secrets AND proprietary
+                        code identity — internal classes/functions/packages,
+                        internal URLs/paths, SQL identifiers — across 11
+                        languages (TS/JS, SQL, Go, Java, C#, Kotlin, Python,
+                        Rust, C, C++, COBOL) on the request, and restores them
+                        on the streamed response. See the gateway's
+                        SUPPORTED_TOOLS.md for the full coverage map.
 ~~~
  
 The detector is shared across every surface: add a pattern once, and the browser extension and gateway both gain it.
@@ -86,8 +90,9 @@ The fixture suite covers detection accuracy across real-shaped (but fake) secret
 - [x] Site-specific adapters for ChatGPT, Claude, Gemini
 - [x] Swap & rehydrate engine (structurally-valid mock replacements that preserve LLM reasoning)
 - [x] Local gateway — wire-level interception for terminal AI tools (Claude Code)
-- [ ] OpenAI-format support in the gateway (Codex CLI and other OpenAI-compatible clients)
-- [ ] Cursor coverage
+- [x] OpenAI-format support in the gateway (Codex CLI + other OpenAI-compatible clients: Aider, Goose, …) and Gemini CLI
+- [x] Code-identity masking in the gateway across 11 languages (TS/JS, SQL, Go, Java, C#, Kotlin, Python, Rust, C, C++, COBOL)
+- [ ] Cursor coverage (needs enterprise network-level routing — see SUPPORTED_TOOLS.md)
 - [ ] Team dashboard (metadata-only incident aggregation, SSO, audit exports)
 ## License
  
